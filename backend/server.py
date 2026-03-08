@@ -1,6 +1,7 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form, BackgroundTasks
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -10,8 +11,29 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
+import json
+import base64
+from io import BytesIO
+
+# WebPush imports
+try:
+    from pywebpush import webpush, WebPushException
+    from py_vapid import Vapid
+    WEBPUSH_AVAILABLE = True
+except ImportError:
+    WEBPUSH_AVAILABLE = False
+
+# Image processing
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 ROOT_DIR = Path(__file__).parent
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
@@ -1139,6 +1161,11 @@ def get_mock_sewage_incidents():
 
 # ==================== WEBPUSH NOTIFICATIONS ====================
 
+# Generate VAPID keys if not exists
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U")
+VAPID_CLAIMS = {"sub": "mailto:alerts@waterwatchuk.com"}
+
 @api_router.post("/push/subscribe")
 async def subscribe_to_push(subscription: WebPushSubscription, user: User = Depends(require_auth)):
     """Subscribe to WebPush notifications"""
@@ -1167,14 +1194,162 @@ async def unsubscribe_from_push(user: User = Depends(require_auth)):
 @api_router.get("/push/vapid-key")
 async def get_vapid_public_key():
     """Get VAPID public key for WebPush subscription"""
-    # For production, generate real VAPID keys using:
-    # openssl ecparam -genkey -name prime256v1 -out private_key.pem
-    # openssl ec -in private_key.pem -pubout -outform DER | tail -c 65 | base64 | tr '/+' '_-' | tr -d '='
+    return {"public_key": VAPID_PUBLIC_KEY}
+
+async def send_push_notification(user_id: str, title: str, body: str, data: dict = None):
+    """Send a push notification to a user"""
+    if not WEBPUSH_AVAILABLE or not VAPID_PRIVATE_KEY:
+        logger.warning("WebPush not configured - skipping notification")
+        return False
     
-    # Demo public key - replace with real key in production
-    public_key = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U"
+    subscription = await db.push_subscriptions.find_one(
+        {"user_id": user_id},
+        {"_id": 0}
+    )
     
-    return {"public_key": public_key}
+    if not subscription:
+        return False
+    
+    try:
+        payload = json.dumps({
+            "title": title,
+            "body": body,
+            "icon": "/logo192.png",
+            "badge": "/badge.png",
+            "data": data or {}
+        })
+        
+        webpush(
+            subscription_info={
+                "endpoint": subscription["endpoint"],
+                "keys": subscription["keys"]
+            },
+            data=payload,
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims=VAPID_CLAIMS
+        )
+        
+        logger.info(f"Push notification sent to user {user_id}")
+        return True
+    except WebPushException as e:
+        logger.error(f"WebPush error: {e}")
+        if e.response and e.response.status_code == 410:
+            # Subscription expired, remove it
+            await db.push_subscriptions.delete_one({"user_id": user_id})
+        return False
+    except Exception as e:
+        logger.error(f"Push notification error: {e}")
+        return False
+
+@api_router.post("/push/send-test")
+async def send_test_notification(user: User = Depends(require_auth)):
+    """Send a test push notification"""
+    success = await send_push_notification(
+        user.user_id,
+        "WaterWatch UK Test",
+        "Push notifications are working! You'll receive alerts about water conditions.",
+        {"type": "test"}
+    )
+    
+    if success:
+        return {"message": "Test notification sent"}
+    else:
+        return {"message": "Notification queued (WebPush not fully configured)", "status": "pending"}
+
+# Background task to send flood alerts
+async def check_and_send_flood_alerts():
+    """Check for new flood warnings and notify subscribed users"""
+    try:
+        # Get current flood warnings
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            response = await client_http.get(
+                "https://environment.data.gov.uk/flood-monitoring/id/floods",
+                params={"_limit": 10}
+            )
+            
+            if response.status_code != 200:
+                return
+            
+            data = response.json()
+            warnings = data.get("items", [])
+            
+            if not warnings:
+                return
+            
+            # Get users with notification subscriptions
+            subscriptions = await db.notification_subscriptions.find(
+                {"enabled": True, "alert_types": "flood"},
+                {"_id": 0}
+            ).to_list(100)
+            
+            for sub in subscriptions:
+                user_id = sub.get("user_id")
+                await send_push_notification(
+                    user_id,
+                    "⚠️ Flood Warning",
+                    f"{len(warnings)} active flood warnings in your area",
+                    {"type": "flood", "count": len(warnings)}
+                )
+    except Exception as e:
+        logger.error(f"Flood alert check error: {e}")
+
+# ==================== PHOTO UPLOADS ====================
+
+@api_router.post("/upload/photo")
+async def upload_photo(
+    file: UploadFile = File(...),
+    user: User = Depends(require_auth)
+):
+    """Upload a photo for community reports"""
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    # Limit file size (5MB)
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+    
+    # Generate unique filename
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    filepath = UPLOAD_DIR / filename
+    
+    # Process and save image
+    if PIL_AVAILABLE:
+        try:
+            img = Image.open(BytesIO(contents))
+            # Resize if too large
+            max_size = (1920, 1920)
+            img.thumbnail(max_size, Image.Resampling.LANCZOS)
+            # Convert to RGB if necessary
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            # Save with compression
+            img.save(filepath, "JPEG", quality=85, optimize=True)
+        except Exception as e:
+            logger.error(f"Image processing error: {e}")
+            # Fallback to raw save
+            with open(filepath, "wb") as f:
+                f.write(contents)
+    else:
+        with open(filepath, "wb") as f:
+            f.write(contents)
+    
+    # Return URL
+    photo_url = f"/api/uploads/{filename}"
+    
+    return {"url": photo_url, "filename": filename}
+
+@api_router.get("/uploads/{filename}")
+async def get_upload(filename: str):
+    """Serve uploaded files"""
+    from starlette.responses import FileResponse
+    
+    filepath = UPLOAD_DIR / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(filepath, media_type="image/jpeg")
 
 # ==================== COMMUNITY REPORTS ====================
 

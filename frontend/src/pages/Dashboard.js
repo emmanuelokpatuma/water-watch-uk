@@ -66,6 +66,7 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { toast } from 'sonner';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -262,6 +263,7 @@ function HistoryChart({ data, summary }) {
 
 export default function Dashboard() {
   const { user, login, logout } = useAuth();
+  const { isSupported: pushSupported, isSubscribed: pushSubscribed, subscribe: subscribePush, unsubscribe: unsubscribePush, sendTestNotification } = usePushNotifications();
   const [stations, setStations] = useState([]);
   const [bathingWaters, setBathingWaters] = useState([]);
   const [favorites, setFavorites] = useState([]);
@@ -288,7 +290,7 @@ export default function Dashboard() {
   const [showSewageLayer, setShowSewageLayer] = useState(true);
   const [communityReports, setCommunityReports] = useState([]);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
-  const [newReport, setNewReport] = useState({ description: '', rating: 3, report_type: 'observation' });
+  const [newReport, setNewReport] = useState({ description: '', rating: 3, report_type: 'observation', photos: [] });
   const [sidebarTab, setSidebarTab] = useState('stations');
   const searchTimeoutRef = useRef(null);
 
@@ -589,6 +591,10 @@ export default function Dashboard() {
 
     try {
       if (notificationsEnabled) {
+        // Unsubscribe from push
+        if (pushSubscribed) {
+          await unsubscribePush();
+        }
         await fetch(`${API}/notifications/unsubscribe`, {
           method: 'DELETE',
           credentials: 'include'
@@ -596,6 +602,16 @@ export default function Dashboard() {
         setNotificationsEnabled(false);
         toast.success('Notifications disabled');
       } else {
+        // Subscribe to push notifications
+        if (pushSupported && !pushSubscribed) {
+          try {
+            await subscribePush();
+            toast.success('Push notifications enabled!');
+          } catch (err) {
+            console.log('Push subscription failed, continuing with email notifications');
+          }
+        }
+        
         const stationIds = favorites.map(f => f.station_id);
         await fetch(`${API}/notifications/subscribe`, {
           method: 'POST',
@@ -1479,6 +1495,66 @@ export default function Dashboard() {
                 className="bg-slate-800 border-slate-700 text-white"
                 rows={3}
               />
+            </div>
+
+            {/* Photo Upload */}
+            <div>
+              <label className="text-sm text-slate-400 mb-2 block">Add Photos (optional)</label>
+              <div className="flex flex-wrap gap-2">
+                {newReport.photos?.map((photo, index) => (
+                  <div key={index} className="relative w-16 h-16">
+                    <img src={photo} alt="" className="w-full h-full object-cover rounded-lg" />
+                    <button
+                      onClick={() => setNewReport({
+                        ...newReport,
+                        photos: newReport.photos.filter((_, i) => i !== index)
+                      })}
+                      className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center"
+                    >
+                      <X className="w-3 h-3 text-white" />
+                    </button>
+                  </div>
+                ))}
+                {(!newReport.photos || newReport.photos.length < 3) && (
+                  <label className="w-16 h-16 border-2 border-dashed border-slate-600 rounded-lg flex items-center justify-center cursor-pointer hover:border-cyan-500 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        
+                        try {
+                          const response = await fetch(`${API}/upload/photo`, {
+                            method: 'POST',
+                            credentials: 'include',
+                            body: formData
+                          });
+                          
+                          if (response.ok) {
+                            const data = await response.json();
+                            setNewReport({
+                              ...newReport,
+                              photos: [...(newReport.photos || []), `${BACKEND_URL}${data.url}`]
+                            });
+                            toast.success('Photo uploaded');
+                          } else {
+                            toast.error('Failed to upload photo');
+                          }
+                        } catch (error) {
+                          toast.error('Upload failed');
+                        }
+                      }}
+                    />
+                    <span className="text-2xl text-slate-500">+</span>
+                  </label>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Max 3 photos, 5MB each</p>
             </div>
 
             <Button
