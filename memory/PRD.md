@@ -15,59 +15,79 @@ Target audience: Wild swimmers, anglers, kayakers, paddleboarders.
 3. **Angler** - Interested in water quality and pollution data
 4. **Environmental Activist** - Monitors sewage alerts and pollution incidents
 
-## Core Requirements (Static)
-- Interactive UK map with water monitoring stations
-- Real-time data from Environment Agency API
-- Safety score visualization (1-10)
-- Search by postcode/river/beach name
-- User favorites system
-- Google OAuth authentication
-- AI-powered safety insights
-
 ## Architecture
-- **Frontend**: React 19 with react-leaflet, Tailwind CSS, Shadcn UI, Recharts
+- **Frontend**: React 19, react-leaflet, Tailwind CSS, Shadcn UI, Recharts
 - **Backend**: FastAPI with async MongoDB (motor)
 - **Database**: MongoDB
 - **Map**: Leaflet with CartoDB Dark Matter tiles
 - **AI**: OpenAI GPT-4o-mini via Emergent integrations
+- **Weather**: Open-Meteo API (free, no key needed)
 
 ## What's Been Implemented
 
-### Phase 1 (March 8, 2026 - MVP)
-- Landing page with hero section and features
-- Dashboard with interactive Leaflet map
+### Phase 1 - MVP (March 8, 2026)
+- Landing page with hero section
+- Dashboard with Leaflet map
 - 100+ monitoring stations from Environment Agency
-- Custom markers with safety score colors
-- Safety score ring visualization
+- Safety score visualization
 - AI-powered safety insights
-- Search by postcode/location
+- Search functionality
 - Google OAuth authentication
 - User favorites system
 
-### Phase 2 (March 8, 2026 - Enhancements)
-- **Bathing Waters**: Beach locations with quality ratings (Excellent/Good/Sufficient/Poor)
-- **Historical Charts**: 7-day water level history with min/max/avg/trend stats using Recharts
-- **Share Reports**: Generate shareable safety reports with emojis for Twitter/Facebook
-- **Notification Subscriptions**: Alert subscriptions for flood/sewage/pollution warnings
-- **Mobile Optimization**: Responsive sidebar, touch-friendly buttons, safe area support
-- **Tabbed Detail Panel**: Info and History tabs in station details
+### Phase 2 - Enhancements (March 8, 2026)
+- Bathing Waters with quality ratings
+- Historical charts (7-day water level history)
+- Share Reports for social media
+- Notification subscriptions
+- Mobile optimization
+
+### Phase 3 - Final Features (March 8, 2026)
+- **Weather Integration**: Open-Meteo API providing:
+  - Current conditions (temp, humidity, wind, UV)
+  - 3-day forecast
+  - Activity recommendations based on weather
+- **Sewage Discharge Alerts**: 
+  - Real-time status from Thames Water, Yorkshire Water, United Utilities
+  - Purple markers on map for sewage treatment works
+  - Active discharge warnings with duration
+  - Toggle to show/hide sewage layer
+- **Community Reports**:
+  - Users can submit water condition observations
+  - Report types: observation, pollution, wildlife, safety
+  - Star ratings and descriptions
+- **WebPush Notifications**:
+  - VAPID key setup
+  - Subscription endpoints
+  - Ready for push notification delivery
 
 ### Backend APIs
 - `/api/stations` - Environment Agency monitoring stations
 - `/api/stations/{id}/readings` - Latest readings
-- `/api/stations/{id}/history` - 7-day historical data with stats
-- `/api/bathing-waters` - Bathing water quality locations
+- `/api/stations/{id}/history` - 7-day historical data
+- `/api/bathing-waters` - Bathing water quality
 - `/api/flood-warnings` - Active flood warnings
-- `/api/search` - Location search (postcode + nominatim)
+- `/api/search` - Location search
 - `/api/favorites` - User favorites CRUD
 - `/api/notifications/*` - Subscription management
-- `/api/share/generate-report` - Social share report generation
-- `/api/ai/safety-insight` - AI safety recommendations
+- `/api/push/*` - WebPush endpoints
+- `/api/share/generate-report` - Social share reports
+- `/api/weather` - Weather data from Open-Meteo
+- `/api/sewage-incidents` - Water company discharge data
+- `/api/sewage-incidents/near` - Nearby sewage incidents
+- `/api/community/reports` - Community reports
+- `/api/ai/safety-insight` - AI recommendations
 - `/api/auth/*` - Google OAuth flow
+
+## Data Sources
+1. **Environment Agency** - Water levels, flood warnings, bathing quality
+2. **Open-Meteo** - Weather forecasts (free, no key)
+3. **Water Companies** - Sewage discharge data (mock data for demo, real API requires registration)
+4. **Community** - User-submitted reports
 
 ## Prioritized Backlog
 
-### P0 - Critical (Done)
+### P0 - Critical (Complete)
 - [x] Map integration with Leaflet
 - [x] Environment Agency API integration
 - [x] Safety score calculation
@@ -78,22 +98,26 @@ Target audience: Wild swimmers, anglers, kayakers, paddleboarders.
 - [x] Share reports
 - [x] Notification subscriptions
 - [x] Mobile optimization
+- [x] Weather integration
+- [x] Sewage discharge alerts
+- [x] Community reports
 
-### P1 - Important (Future)
-- [ ] Push notification delivery (WebPush)
-- [ ] Water company incident feeds integration
-- [ ] Community reports/comments
-- [ ] Weather integration
+### P1 - Future Enhancements
+- [ ] Real Thames Water EDM API integration (requires registration)
+- [ ] Push notification delivery via WebPush
+- [ ] Email notification digest
+- [ ] Weather alerts integration
 - [ ] Fishing forecasts
 
 ### P2 - Nice to Have
-- [ ] Email notification digest
+- [ ] Photo uploads in community reports
+- [ ] Report moderation dashboard
 - [ ] Export/download PDF reports
 - [ ] Offline mode with cached data
 - [ ] Multi-language support
 
-## Next Tasks
-1. Implement WebPush for real notification delivery
-2. Integrate water company incident feeds (Thames Water, Yorkshire Water, etc.)
-3. Add weather overlay from Met Office API
-4. Create community reporting feature
+## Notes
+- Sewage incidents use sample data for demonstration
+- For production, register at https://data.thameswater.co.uk/ for EDM API access
+- Weather data is live from Open-Meteo
+- All Environment Agency data is live
