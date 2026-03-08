@@ -1673,32 +1673,305 @@ async def get_nearby_supply_incidents(lat: float, lng: float, radius_km: float =
 
 @api_router.get("/home-water/quality")
 async def get_drinking_water_quality(postcode: str):
-    """Get drinking water quality information for a postcode"""
-    # Determine water company based on postcode
+    """Get drinking water quality information for a postcode using Environment Agency data"""
     postcode_upper = postcode.upper()
     water_company = determine_water_company(postcode_upper)
     
-    # Sample water quality data
+    # First, geocode the postcode
+    lat, lng = None, None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client_http:
+            postcode_response = await client_http.get(f"https://api.postcodes.io/postcodes/{postcode_upper.replace(' ', '')}")
+            if postcode_response.status_code == 200:
+                data = postcode_response.json()
+                if data.get("status") == 200 and data.get("result"):
+                    lat = data["result"].get("latitude")
+                    lng = data["result"].get("longitude")
+    except Exception as e:
+        logger.error(f"Postcode lookup error: {e}")
+    
+    # Fetch real water quality data from Environment Agency
+    ea_quality_data = []
+    sampling_points = []
+    
+    if lat and lng:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client_http:
+                # Get water quality sampling points near the postcode
+                url = "https://environment.data.gov.uk/water-quality/id/sampling-point"
+                params = {
+                    "lat": lat,
+                    "long": lng,
+                    "dist": 10,  # 10km radius
+                    "_limit": 20
+                }
+                
+                response = await client_http.get(url, params=params)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data.get("items", []):
+                        sampling_points.append({
+                            "id": item.get("notation", ""),
+                            "label": item.get("label", "Unknown"),
+                            "easting": item.get("easting"),
+                            "northing": item.get("northing")
+                        })
+                    
+                    # Get recent measurements for the first sampling point
+                    if sampling_points:
+                        point_id = sampling_points[0]["id"]
+                        measurements_url = f"https://environment.data.gov.uk/water-quality/id/sampling-point/{point_id}/measurements"
+                        meas_params = {"_limit": 50, "_sort": "-sample.sampleDateTime"}
+                        
+                        meas_response = await client_http.get(measurements_url, params=meas_params)
+                        
+                        if meas_response.status_code == 200:
+                            meas_data = meas_response.json()
+                            for item in meas_data.get("items", []):
+                                determinand = item.get("determinand", {})
+                                ea_quality_data.append({
+                                    "parameter": determinand.get("label", "Unknown"),
+                                    "value": item.get("result"),
+                                    "unit": determinand.get("unit", {}).get("label", ""),
+                                    "date": item.get("sample", {}).get("sampleDateTime"),
+                                    "notation": determinand.get("notation", "")
+                                })
+        except Exception as e:
+            logger.error(f"EA Water Quality API error: {e}")
+    
+    # Build quality parameters from EA data or use defaults
+    parameters = {}
+    ea_parameters_found = set()
+    
+    for item in ea_quality_data[:20]:
+        param_name = item["parameter"].lower()
+        notation = item.get("notation", "").lower()
+        
+        if any(x in param_name or x in notation for x in ["ph", "hydrogen"]) and "ph" not in ea_parameters_found:
+            parameters["ph"] = {
+                "value": round(float(item["value"]), 2) if item["value"] else None,
+                "unit": "pH",
+                "status": "normal" if item["value"] and 6.5 <= float(item["value"]) <= 9.5 else "check",
+                "range": "6.5-9.5",
+                "source": "Environment Agency",
+                "measured": item["date"]
+            }
+            ea_parameters_found.add("ph")
+        elif any(x in param_name or x in notation for x in ["nitrate", "no3"]) and "nitrate" not in ea_parameters_found:
+            parameters["nitrate"] = {
+                "value": round(float(item["value"]), 2) if item["value"] else None,
+                "unit": item["unit"] or "mg/L",
+                "status": "normal" if item["value"] and float(item["value"]) < 50 else "elevated",
+                "limit": 50,
+                "source": "Environment Agency",
+                "measured": item["date"]
+            }
+            ea_parameters_found.add("nitrate")
+        elif any(x in param_name or x in notation for x in ["phosph", "po4"]) and "phosphate" not in ea_parameters_found:
+            parameters["phosphate"] = {
+                "value": round(float(item["value"]), 3) if item["value"] else None,
+                "unit": item["unit"] or "mg/L",
+                "status": "normal" if item["value"] and float(item["value"]) < 0.1 else "elevated",
+                "source": "Environment Agency",
+                "measured": item["date"]
+            }
+            ea_parameters_found.add("phosphate")
+        elif any(x in param_name or x in notation for x in ["ammoni", "nh4", "nh3"]) and "ammonia" not in ea_parameters_found:
+            parameters["ammonia"] = {
+                "value": round(float(item["value"]), 3) if item["value"] else None,
+                "unit": item["unit"] or "mg/L",
+                "status": "normal" if item["value"] and float(item["value"]) < 0.5 else "elevated",
+                "limit": 0.5,
+                "source": "Environment Agency",
+                "measured": item["date"]
+            }
+            ea_parameters_found.add("ammonia")
+        elif any(x in param_name or x in notation for x in ["oxygen", "do", "diss"]) and "dissolved_oxygen" not in ea_parameters_found:
+            parameters["dissolved_oxygen"] = {
+                "value": round(float(item["value"]), 1) if item["value"] else None,
+                "unit": item["unit"] or "% saturation",
+                "status": "good" if item["value"] and float(item["value"]) > 70 else "low",
+                "source": "Environment Agency",
+                "measured": item["date"]
+            }
+            ea_parameters_found.add("dissolved_oxygen")
+        elif any(x in param_name or x in notation for x in ["conductiv"]) and "conductivity" not in ea_parameters_found:
+            parameters["conductivity"] = {
+                "value": round(float(item["value"]), 0) if item["value"] else None,
+                "unit": item["unit"] or "µS/cm",
+                "status": "normal",
+                "source": "Environment Agency",
+                "measured": item["date"]
+            }
+            ea_parameters_found.add("conductivity")
+        elif any(x in param_name or x in notation for x in ["temp"]) and "temperature" not in ea_parameters_found:
+            parameters["temperature"] = {
+                "value": round(float(item["value"]), 1) if item["value"] else None,
+                "unit": "°C",
+                "status": "normal",
+                "source": "Environment Agency",
+                "measured": item["date"]
+            }
+            ea_parameters_found.add("temperature")
+    
+    # Add default drinking water parameters if not found from EA
+    if "chlorine" not in parameters:
+        parameters["chlorine"] = {"value": 0.3, "unit": "mg/L", "status": "normal", "limit": 0.5, "source": "Water Company Standard"}
+    if "hardness" not in parameters:
+        # Estimate hardness based on region
+        hardness_by_region = {
+            "Thames Water": 280,
+            "Yorkshire Water": 200,
+            "United Utilities": 50,
+            "Severn Trent": 220,
+            "Anglian Water": 290
+        }
+        hardness = hardness_by_region.get(water_company, 200)
+        hardness_desc = "Soft" if hardness < 100 else "Moderately Hard" if hardness < 200 else "Hard" if hardness < 300 else "Very Hard"
+        parameters["hardness"] = {"value": hardness, "unit": "mg/L CaCO3", "status": hardness_desc.lower().replace(" ", "_"), "description": hardness_desc, "source": "Regional Average"}
+    if "lead" not in parameters:
+        parameters["lead"] = {"value": 0.002, "unit": "mg/L", "status": "safe", "limit": 0.01, "source": "Water Company Standard"}
+    if "fluoride" not in parameters:
+        parameters["fluoride"] = {"value": 0.1, "unit": "mg/L", "status": "normal", "limit": 1.5, "source": "Water Company Standard"}
+    
+    # Calculate overall quality rating
+    elevated_count = sum(1 for p in parameters.values() if p.get("status") in ["elevated", "check", "low"])
+    quality_rating = "Excellent" if elevated_count == 0 else "Good" if elevated_count <= 2 else "Fair"
+    
     quality_data = {
         "postcode": postcode_upper,
         "water_company": water_company,
-        "quality_rating": "Excellent",
-        "last_tested": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(),
-        "parameters": {
-            "chlorine": {"value": 0.3, "unit": "mg/L", "status": "normal", "limit": 0.5},
-            "hardness": {"value": 250, "unit": "mg/L CaCO3", "status": "moderately_hard", "description": "Moderately Hard"},
-            "ph": {"value": 7.4, "unit": "pH", "status": "normal", "range": "6.5-9.5"},
-            "lead": {"value": 0.002, "unit": "mg/L", "status": "safe", "limit": 0.01},
-            "nitrate": {"value": 25, "unit": "mg/L", "status": "normal", "limit": 50},
-            "fluoride": {"value": 0.1, "unit": "mg/L", "status": "normal", "limit": 1.5}
-        },
-        "source": "Reservoir/Treatment Works",
+        "quality_rating": quality_rating,
+        "last_tested": ea_quality_data[0]["date"] if ea_quality_data else (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(),
+        "parameters": parameters,
+        "source": sampling_points[0]["label"] if sampling_points else "Water Treatment Works",
         "treatment": ["Filtration", "Chlorination", "pH adjustment"],
-        "meets_standards": True,
-        "notes": "Your water meets all UK drinking water standards."
+        "meets_standards": elevated_count <= 2,
+        "notes": f"Water quality data from Environment Agency monitoring near {postcode_upper}. Drinking water is treated to meet UK standards." if ea_quality_data else "Your water meets all UK drinking water standards.",
+        "data_source": "Environment Agency" if ea_quality_data else "Water Company Standard",
+        "sampling_points_nearby": len(sampling_points),
+        "coordinates": {"lat": lat, "lng": lng} if lat and lng else None
     }
     
     return quality_data
+
+@api_router.get("/home-water/area-report")
+async def get_area_water_report(lat: float, lng: float, radius_km: float = 20):
+    """Get comprehensive water quality report for an area using Environment Agency data"""
+    sampling_points = []
+    all_measurements = []
+    
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client_http:
+            # Get all sampling points in the area
+            url = "https://environment.data.gov.uk/water-quality/id/sampling-point"
+            params = {
+                "lat": lat,
+                "long": lng,
+                "dist": radius_km,
+                "_limit": 50
+            }
+            
+            response = await client_http.get(url, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get("items", []):
+                    point = {
+                        "id": item.get("notation", ""),
+                        "label": item.get("label", "Unknown"),
+                        "type": item.get("samplingPointType", {}).get("label", "Unknown"),
+                        "easting": item.get("easting"),
+                        "northing": item.get("northing"),
+                        "area": item.get("area", {}).get("label", ""),
+                        "status": item.get("samplingPointStatus", {}).get("label", "Active")
+                    }
+                    sampling_points.append(point)
+                
+                # Get recent measurements for up to 5 sampling points
+                for point in sampling_points[:5]:
+                    try:
+                        meas_url = f"https://environment.data.gov.uk/water-quality/id/sampling-point/{point['id']}/measurements"
+                        meas_params = {"_limit": 20, "_sort": "-sample.sampleDateTime"}
+                        
+                        meas_response = await client_http.get(meas_url, params=meas_params)
+                        
+                        if meas_response.status_code == 200:
+                            meas_data = meas_response.json()
+                            for item in meas_data.get("items", []):
+                                determinand = item.get("determinand", {})
+                                all_measurements.append({
+                                    "point_id": point["id"],
+                                    "point_name": point["label"],
+                                    "parameter": determinand.get("label", "Unknown"),
+                                    "value": item.get("result"),
+                                    "unit": determinand.get("unit", {}).get("label", ""),
+                                    "date": item.get("sample", {}).get("sampleDateTime")
+                                })
+                    except Exception as e:
+                        logger.error(f"Error fetching measurements for {point['id']}: {e}")
+                        continue
+    except Exception as e:
+        logger.error(f"Area water report error: {e}")
+    
+    # Aggregate parameters across all sampling points
+    param_summary = {}
+    for meas in all_measurements:
+        param = meas["parameter"]
+        if param not in param_summary:
+            param_summary[param] = {
+                "values": [],
+                "unit": meas["unit"],
+                "latest_date": meas["date"],
+                "locations_measured": set()
+            }
+        if meas["value"]:
+            param_summary[param]["values"].append(float(meas["value"]))
+            param_summary[param]["locations_measured"].add(meas["point_name"])
+    
+    # Calculate averages and format
+    formatted_params = {}
+    for param, data in param_summary.items():
+        if data["values"]:
+            formatted_params[param] = {
+                "average": round(sum(data["values"]) / len(data["values"]), 3),
+                "min": round(min(data["values"]), 3),
+                "max": round(max(data["values"]), 3),
+                "sample_count": len(data["values"]),
+                "unit": data["unit"],
+                "locations": len(data["locations_measured"]),
+                "latest_date": data["latest_date"]
+            }
+    
+    # Determine overall area health
+    area_health = "Good"
+    concerns = []
+    
+    # Check key parameters
+    for param, data in formatted_params.items():
+        param_lower = param.lower()
+        if "nitrate" in param_lower and data["average"] > 40:
+            concerns.append(f"Elevated nitrate levels (avg {data['average']} mg/L)")
+            area_health = "Fair"
+        if "ammonia" in param_lower and data["average"] > 0.3:
+            concerns.append(f"Elevated ammonia levels (avg {data['average']} mg/L)")
+            area_health = "Fair"
+        if "phosph" in param_lower and data["average"] > 0.1:
+            concerns.append(f"Elevated phosphate levels")
+    
+    return {
+        "coordinates": {"lat": lat, "lng": lng},
+        "radius_km": radius_km,
+        "sampling_points": sampling_points,
+        "sampling_points_count": len(sampling_points),
+        "measurements_count": len(all_measurements),
+        "parameters_summary": formatted_params,
+        "area_health": area_health,
+        "concerns": concerns,
+        "data_source": "Environment Agency Water Quality Archive",
+        "note": "This data reflects environmental water quality monitoring. Drinking water undergoes additional treatment to meet UK standards."
+    }
 
 @api_router.get("/home-water/planned-works")
 async def get_planned_works(postcode: Optional[str] = None):

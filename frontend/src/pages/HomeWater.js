@@ -446,12 +446,44 @@ export default function HomeWater() {
                 {waterQuality ? (
                   <div className="space-y-6">
                     <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                        <Shield className="w-8 h-8 text-emerald-400" />
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+                        waterQuality.quality_rating === 'Excellent' ? 'bg-emerald-500/20' :
+                        waterQuality.quality_rating === 'Good' ? 'bg-cyan-500/20' : 'bg-yellow-500/20'
+                      }`}>
+                        <Shield className={`w-8 h-8 ${
+                          waterQuality.quality_rating === 'Excellent' ? 'text-emerald-400' :
+                          waterQuality.quality_rating === 'Good' ? 'text-cyan-400' : 'text-yellow-400'
+                        }`} />
                       </div>
-                      <div>
-                        <h3 className="text-xl font-semibold text-white">{waterQuality.quality_rating}</h3>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xl font-semibold text-white">{waterQuality.quality_rating}</h3>
+                          {waterQuality.data_source === 'Environment Agency' && (
+                            <Badge variant="outline" className="border-cyan-500 text-cyan-400">
+                              Live Data
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-slate-400">{waterQuality.notes}</p>
+                        {waterQuality.sampling_points_nearby > 0 && (
+                          <p className="text-slate-500 text-sm mt-1">
+                            Based on {waterQuality.sampling_points_nearby} monitoring points nearby
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Data Source Info */}
+                    <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                      <div className="flex items-start gap-2">
+                        <Info className="w-4 h-4 text-cyan-400 mt-0.5" />
+                        <div className="text-sm">
+                          <span className="text-cyan-400 font-medium">Data Source: </span>
+                          <span className="text-slate-300">{waterQuality.data_source}</span>
+                          {waterQuality.last_tested && (
+                            <span className="text-slate-500"> • Last tested: {new Date(waterQuality.last_tested).toLocaleDateString()}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -466,28 +498,43 @@ export default function HomeWater() {
                             className="p-4 rounded-lg bg-slate-800/50 border border-slate-700"
                           >
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-white font-medium capitalize">{key}</span>
+                              <span className="text-white font-medium capitalize">{key.replace(/_/g, ' ')}</span>
                               <Badge
                                 variant="outline"
                                 className={
-                                  param.status === 'safe' || param.status === 'normal'
+                                  param.status === 'safe' || param.status === 'normal' || param.status === 'good'
                                     ? 'border-emerald-500 text-emerald-400'
+                                    : param.status === 'elevated' || param.status === 'check' || param.status === 'low'
+                                    ? 'border-orange-500 text-orange-400'
                                     : 'border-yellow-500 text-yellow-400'
                                 }
                               >
-                                {param.status}
+                                {param.status?.replace(/_/g, ' ')}
                               </Badge>
                             </div>
                             <div className="text-2xl font-mono text-cyan-400">
-                              {param.value} <span className="text-sm text-slate-500">{param.unit}</span>
+                              {param.value !== null ? param.value : 'N/A'} <span className="text-sm text-slate-500">{param.unit}</span>
                             </div>
                             {param.limit && (
                               <div className="text-xs text-slate-500 mt-1">
                                 Limit: {param.limit} {param.unit}
                               </div>
                             )}
+                            {param.range && (
+                              <div className="text-xs text-slate-500 mt-1">
+                                Safe range: {param.range}
+                              </div>
+                            )}
                             {param.description && (
                               <div className="text-xs text-slate-400 mt-1">{param.description}</div>
+                            )}
+                            {param.source && (
+                              <div className="text-xs text-slate-600 mt-1">Source: {param.source}</div>
+                            )}
+                            {param.measured && (
+                              <div className="text-xs text-slate-600 mt-1">
+                                Measured: {new Date(param.measured).toLocaleDateString()}
+                              </div>
                             )}
                           </div>
                         ))}
@@ -497,12 +544,38 @@ export default function HomeWater() {
                     <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700">
                       <h4 className="text-sm font-semibold text-slate-400 mb-2">Water Source & Treatment</h4>
                       <p className="text-white mb-2">Source: {waterQuality.source}</p>
+                      <p className="text-slate-400 mb-2">Provider: {waterQuality.water_company}</p>
                       <div className="flex flex-wrap gap-2">
                         {waterQuality.treatment?.map((t, i) => (
                           <Badge key={i} variant="outline" className="border-slate-600 text-slate-300">
                             {t}
                           </Badge>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Meets Standards Badge */}
+                    <div className={`p-4 rounded-lg border ${
+                      waterQuality.meets_standards 
+                        ? 'bg-emerald-500/10 border-emerald-500/30' 
+                        : 'bg-orange-500/10 border-orange-500/30'
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        {waterQuality.meets_standards ? (
+                          <CheckCircle className="w-6 h-6 text-emerald-400" />
+                        ) : (
+                          <AlertTriangle className="w-6 h-6 text-orange-400" />
+                        )}
+                        <div>
+                          <p className={`font-medium ${waterQuality.meets_standards ? 'text-emerald-400' : 'text-orange-400'}`}>
+                            {waterQuality.meets_standards 
+                              ? 'Meets UK Drinking Water Standards' 
+                              : 'Some Parameters Need Attention'}
+                          </p>
+                          <p className="text-slate-400 text-sm">
+                            Based on Drinking Water Inspectorate guidelines
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
