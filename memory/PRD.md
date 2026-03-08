@@ -25,50 +25,45 @@ Target audience: Wild swimmers, anglers, kayakers, paddleboarders.
 - AI-powered safety insights
 
 ## Architecture
-- **Frontend**: React 19 with react-leaflet, Tailwind CSS, Shadcn UI
+- **Frontend**: React 19 with react-leaflet, Tailwind CSS, Shadcn UI, Recharts
 - **Backend**: FastAPI with async MongoDB (motor)
 - **Database**: MongoDB
 - **Map**: Leaflet with CartoDB Dark Matter tiles
 - **AI**: OpenAI GPT-4o-mini via Emergent integrations
 
-## What's Been Implemented (March 8, 2026)
+## What's Been Implemented
 
-### Landing Page
-- Hero section with animated stats
-- Features grid with glassmorphism cards
-- AI features showcase
-- Community section
-- Navigation with auth buttons
-
-### Dashboard
-- Full-screen interactive Leaflet map
+### Phase 1 (March 8, 2026 - MVP)
+- Landing page with hero section and features
+- Dashboard with interactive Leaflet map
+- 100+ monitoring stations from Environment Agency
 - Custom markers with safety score colors
-- Glassmorphism sidebar with:
-  - Search input (postcode/river)
-  - Active flood warnings
-  - User favorites (when logged in)
-  - Station list with safety badges
-- Station detail panel with:
-  - Safety score ring visualization
-  - Pollution/flood risk indicators
-  - AI-powered safety insights
-  - Favorite toggle
-  - Google Maps directions
+- Safety score ring visualization
+- AI-powered safety insights
+- Search by postcode/location
+- Google OAuth authentication
+- User favorites system
+
+### Phase 2 (March 8, 2026 - Enhancements)
+- **Bathing Waters**: Beach locations with quality ratings (Excellent/Good/Sufficient/Poor)
+- **Historical Charts**: 7-day water level history with min/max/avg/trend stats using Recharts
+- **Share Reports**: Generate shareable safety reports with emojis for Twitter/Facebook
+- **Notification Subscriptions**: Alert subscriptions for flood/sewage/pollution warnings
+- **Mobile Optimization**: Responsive sidebar, touch-friendly buttons, safe area support
+- **Tabbed Detail Panel**: Info and History tabs in station details
 
 ### Backend APIs
 - `/api/stations` - Environment Agency monitoring stations
 - `/api/stations/{id}/readings` - Latest readings
-- `/api/bathing-waters` - Bathing water quality
+- `/api/stations/{id}/history` - 7-day historical data with stats
+- `/api/bathing-waters` - Bathing water quality locations
 - `/api/flood-warnings` - Active flood warnings
 - `/api/search` - Location search (postcode + nominatim)
 - `/api/favorites` - User favorites CRUD
+- `/api/notifications/*` - Subscription management
+- `/api/share/generate-report` - Social share report generation
 - `/api/ai/safety-insight` - AI safety recommendations
 - `/api/auth/*` - Google OAuth flow
-
-### Authentication
-- Emergent-managed Google OAuth
-- Session token with 7-day expiry
-- httpOnly secure cookies
 
 ## Prioritized Backlog
 
@@ -78,24 +73,27 @@ Target audience: Wild swimmers, anglers, kayakers, paddleboarders.
 - [x] Safety score calculation
 - [x] Search functionality
 - [x] User authentication
+- [x] Bathing water markers
+- [x] Historical data charts
+- [x] Share reports
+- [x] Notification subscriptions
+- [x] Mobile optimization
 
-### P1 - Important (Next Phase)
-- [ ] Push notifications for alerts
-- [ ] Historical data charts
-- [ ] Bathing water markers on map
-- [ ] User profile settings page
-- [ ] Mobile-responsive optimization
-
-### P2 - Nice to Have
+### P1 - Important (Future)
+- [ ] Push notification delivery (WebPush)
+- [ ] Water company incident feeds integration
 - [ ] Community reports/comments
 - [ ] Weather integration
 - [ ] Fishing forecasts
-- [ ] Water company incident feeds
-- [ ] Export/share functionality
+
+### P2 - Nice to Have
+- [ ] Email notification digest
+- [ ] Export/download PDF reports
+- [ ] Offline mode with cached data
+- [ ] Multi-language support
 
 ## Next Tasks
-1. Add bathing water locations as separate markers
-2. Implement historical readings chart in detail panel
-3. Add push notification subscription
-4. Create user profile/settings page
-5. Improve mobile layout for outdoor use
+1. Implement WebPush for real notification delivery
+2. Integrate water company incident feeds (Thames Water, Yorkshire Water, etc.)
+3. Add weather overlay from Met Office API
+4. Create community reporting feature
