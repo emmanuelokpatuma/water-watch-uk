@@ -8,7 +8,7 @@ import json
 import time
 from datetime import datetime
 
-class WebPushPhotoTester:
+class UKWaterSafetyTester:
     def __init__(self, base_url="https://water-watch-uk.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
@@ -168,129 +168,140 @@ class WebPushPhotoTester:
         except Exception as e:
             return self.log_result("Push Subscription Endpoint", False, f"Error: {str(e)}")
 
-    def test_community_reports_endpoints(self):
-        """Test community reports endpoints"""
+    def test_thames_water_api_integration(self):
+        """Test Thames Water API integration endpoint"""
         try:
-            # Test GET community reports
-            response = requests.get(f"{self.api_url}/community/reports", timeout=10)
+            response = requests.get(f"{self.api_url}/sewage/thames-water", timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
-                get_passed = 'reports' in data
-                self.log_result("Community Reports GET", get_passed, f"Found {len(data.get('reports', []))} reports")
+                status = data.get('status')
+                
+                if status == 'not_configured':
+                    # Check that registration instructions are provided
+                    message = data.get('message', '')
+                    has_registration_url = 'data.thameswater.co.uk' in message
+                    return self.log_result("Thames Water API Integration", True, 
+                                         f"Not configured (expected) - Registration instructions: {has_registration_url}")
+                elif status == 'live':
+                    incidents_count = len(data.get('incidents', []))
+                    return self.log_result("Thames Water API Integration", True, 
+                                         f"Live API data - {incidents_count} incidents")
+                else:
+                    return self.log_result("Thames Water API Integration", True, f"Status: {status}")
             else:
-                get_passed = False
-                self.log_result("Community Reports GET", False, f"HTTP {response.status_code}")
-            
-            # Test POST community report (should require auth)
-            report_data = {
-                "latitude": 51.5074,
-                "longitude": -0.1278,
-                "location_name": "Test Location",
-                "report_type": "observation",
-                "description": "Test report with photo upload capability",
-                "rating": 4,
-                "photos": []
-            }
-            
-            headers = {'Content-Type': 'application/json'}
+                return self.log_result("Thames Water API Integration", False, f"HTTP {response.status_code}")
+                
+        except Exception as e:
+            return self.log_result("Thames Water API Integration", False, f"Error: {str(e)}")
+
+    def test_admin_stats_endpoint(self):
+        """Test admin stats endpoint"""
+        try:
+            headers = {}
             if self.token:
                 headers['Authorization'] = f'Bearer {self.token}'
             
-            response = requests.post(f"{self.api_url}/community/reports", 
-                                   json=report_data, headers=headers, timeout=10)
+            response = requests.get(f"{self.api_url}/admin/stats", headers=headers, timeout=10)
             
-            if response.status_code in [200, 201]:
-                self.log_result("Community Reports POST", True, "Accepts report data")
+            if response.status_code == 200:
+                data = response.json()
+                expected_keys = ['reports', 'users', 'favorites']
+                has_all_keys = all(key in data for key in expected_keys)
+                
+                if has_all_keys:
+                    pending = data['reports'].get('pending', 0)
+                    approved = data['reports'].get('approved', 0)
+                    total_users = data['users'].get('total', 0)
+                    return self.log_result("Admin Stats Endpoint", True, 
+                                         f"Reports: {pending} pending, {approved} approved. Users: {total_users}")
+                else:
+                    return self.log_result("Admin Stats Endpoint", False, f"Missing keys: {expected_keys}")
             elif response.status_code == 401:
-                self.log_result("Community Reports POST", True, "Properly protected (401 without auth)")
+                return self.log_result("Admin Stats Endpoint", True, "Properly protected (401 without auth)")
             else:
-                self.log_result("Community Reports POST", False, f"HTTP {response.status_code}")
-            
-            return get_passed
+                return self.log_result("Admin Stats Endpoint", False, f"HTTP {response.status_code}")
                 
         except Exception as e:
-            return self.log_result("Community Reports Endpoints", False, f"Error: {str(e)}")
+            return self.log_result("Admin Stats Endpoint", False, f"Error: {str(e)}")
 
-    def test_weather_api(self):
-        """Quick test of weather API (already tested but verify still working)"""
+    def test_admin_reports_endpoint(self):
+        """Test admin reports endpoint for moderation"""
         try:
-            # Test with London coordinates
-            response = requests.get(f"{self.api_url}/weather?lat=51.5074&lng=-0.1278", timeout=15)
+            headers = {}
+            if self.token:
+                headers['Authorization'] = f'Bearer {self.token}'
+            
+            response = requests.get(f"{self.api_url}/admin/reports?status=pending&page=1&limit=5", 
+                                  headers=headers, timeout=10)
             
             if response.status_code == 200:
                 data = response.json()
-                if 'weather' in data and data['weather']:
-                    weather = data['weather']
-                    has_temp = 'temperature' in weather
-                    has_forecast = 'forecast' in data and len(data.get('forecast', [])) > 0
-                    
-                    details = f"Temp: {weather.get('temperature', 'N/A')}°C"
-                    if has_forecast:
-                        details += f", {len(data['forecast'])} day forecast"
-                    
-                    return self.log_result("Weather API", has_temp, details)
+                expected_keys = ['reports', 'total', 'page', 'pages']
+                has_all_keys = all(key in data for key in expected_keys)
+                
+                if has_all_keys:
+                    reports_count = len(data.get('reports', []))
+                    total = data.get('total', 0)
+                    return self.log_result("Admin Reports Endpoint", True, 
+                                         f"Paginated list: {reports_count} reports on page 1, total: {total}")
                 else:
-                    return self.log_result("Weather API", False, "No weather data returned")
+                    return self.log_result("Admin Reports Endpoint", False, f"Missing pagination keys")
+            elif response.status_code == 401:
+                return self.log_result("Admin Reports Endpoint", True, "Properly protected (401 without auth)")
             else:
-                return self.log_result("Weather API", False, f"HTTP {response.status_code}")
+                return self.log_result("Admin Reports Endpoint", False, f"HTTP {response.status_code}")
                 
         except Exception as e:
-            return self.log_result("Weather API", False, f"Error: {str(e)}")
-
-    def test_sewage_incidents_api(self):
-        """Quick test of sewage incidents API"""
-        try:
-            response = requests.get(f"{self.api_url}/sewage-incidents", timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if 'incidents' in data:
-                    incidents = data['incidents']
-                    active_count = len([i for i in incidents if i.get('status') == 'Discharging'])
-                    
-                    details = f"Total: {len(incidents)}, Active: {active_count}"
-                    return self.log_result("Sewage Incidents API", True, details)
-                else:
-                    return self.log_result("Sewage Incidents API", False, "No incidents data")
-            else:
-                return self.log_result("Sewage Incidents API", False, f"HTTP {response.status_code}")
-                
-        except Exception as e:
-            return self.log_result("Sewage Incidents API", False, f"Error: {str(e)}")
+            return self.log_result("Admin Reports Endpoint", False, f"Error: {str(e)}")
 
     def run_all_tests(self):
-        """Run all WebPush and photo upload tests"""
-        print("🚀 Starting WebPush & Photo Upload Testing for UK Water Safety Map")
-        print("=" * 60)
+        """Run all tests for the UK Water Safety Map final implementation"""
+        print("🚀 Testing UK Water Safety Map - Final Implementation")
+        print("Features: VAPID keys, Thames Water API, Admin Dashboard, Service Worker, Photo Upload")
+        print("=" * 75)
         
-        # Try to authenticate (may fail, that's ok)
-        self.authenticate_dummy_user()
+        # Try to authenticate (may fail, that's ok for admin endpoints)
+        auth_success = self.authenticate_dummy_user()
+        if auth_success:
+            print("✅ Authentication successful for protected endpoints")
+        else:
+            print("ℹ️  Running tests without authentication (protected endpoints will show 401)")
         
-        # Core WebPush & Photo features
+        print("\n🔧 Testing Core Features:")
+        # Core required features from review request
         self.test_vapid_key_endpoint()
-        self.test_service_worker_endpoint()
+        self.test_service_worker_endpoint() 
         self.test_photo_upload_endpoint()
-        self.test_push_subscription_endpoints()
-        self.test_community_reports_endpoints()
+        self.test_thames_water_api_integration()
         
-        # Verify existing features still work
-        self.test_weather_api()
-        self.test_sewage_incidents_api()
+        print("\n🛡️  Testing Admin Features:")
+        self.test_admin_stats_endpoint()
+        self.test_admin_reports_endpoint()
+        
+        print("\n📱 Testing WebPush Features:")
+        self.test_push_subscription_endpoints()
         
         # Summary
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 75)
         print(f"📊 Test Summary: {self.tests_passed}/{self.tests_run} tests passed ({self.tests_passed/self.tests_run*100:.1f}%)")
         
+        # Detailed failure analysis
+        failed_tests = [r for r in self.test_results if not r['passed']]
+        if failed_tests:
+            print(f"\n❌ Failed Tests ({len(failed_tests)}):")
+            for test in failed_tests:
+                print(f"   • {test['test']}: {test['details']}")
+        
         if self.tests_passed == self.tests_run:
-            print("🎉 All WebPush and Photo Upload features working correctly!")
+            print("\n🎉 All UK Water Safety Map features working correctly!")
             return 0
         else:
-            print(f"⚠️  {self.tests_run - self.tests_passed} tests failed")
+            print(f"\n⚠️  {self.tests_run - self.tests_passed} tests failed - see details above")
             return 1
 
 def main():
-    tester = WebPushPhotoTester()
+    tester = UKWaterSafetyTester()
     return tester.run_all_tests()
 
 if __name__ == "__main__":

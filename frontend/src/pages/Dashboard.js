@@ -1104,6 +1104,14 @@ export default function Dashboard() {
                     <User className="w-4 h-4 mr-2" />
                     Profile
                   </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => window.location.href = '/admin'}
+                    className="text-slate-300 focus:bg-slate-800 focus:text-white"
+                    data-testid="admin-link"
+                  >
+                    <ShieldCheck className="w-4 h-4 mr-2" />
+                    Moderation Dashboard
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator className="bg-slate-700" />
                   <DropdownMenuItem 
                     onClick={logout}

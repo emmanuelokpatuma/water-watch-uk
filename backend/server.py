@@ -1161,10 +1161,11 @@ def get_mock_sewage_incidents():
 
 # ==================== WEBPUSH NOTIFICATIONS ====================
 
-# Generate VAPID keys if not exists
+# Load VAPID keys from environment
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "")
-VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U")
-VAPID_CLAIMS = {"sub": "mailto:alerts@waterwatchuk.com"}
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_EMAIL = os.environ.get("VAPID_EMAIL", "mailto:alerts@waterwatchuk.com")
+VAPID_CLAIMS = {"sub": VAPID_EMAIL}
 
 @api_router.post("/push/subscribe")
 async def subscribe_to_push(subscription: WebPushSubscription, user: User = Depends(require_auth)):
@@ -1402,6 +1403,200 @@ async def submit_community_report(request: Request, user: User = Depends(require
     report_doc.pop("_id", None)
     
     return {"message": "Report submitted for review", "report": report_doc}
+
+# ==================== MODERATION DASHBOARD ====================
+
+@api_router.get("/admin/reports")
+async def get_all_reports_for_moderation(
+    status: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    user: User = Depends(require_auth)
+):
+    """Get all community reports for moderation (admin only)"""
+    # In production, add proper admin role check
+    # For now, allow any authenticated user to moderate
+    
+    query = {}
+    if status:
+        query["status"] = status
+    
+    skip = (page - 1) * limit
+    
+    reports = await db.community_reports.find(
+        query,
+        {"_id": 0}
+    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    total = await db.community_reports.count_documents(query)
+    
+    return {
+        "reports": reports,
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit
+    }
+
+@api_router.patch("/admin/reports/{report_id}")
+async def moderate_report(
+    report_id: str,
+    request: Request,
+    user: User = Depends(require_auth)
+):
+    """Approve or reject a community report"""
+    body = await request.json()
+    new_status = body.get("status")
+    
+    if new_status not in ["approved", "rejected", "pending"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    
+    result = await db.community_reports.update_one(
+        {"id": report_id},
+        {
+            "$set": {
+                "status": new_status,
+                "moderated_by": user.user_id,
+                "moderated_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Notify user if approved
+    if new_status == "approved":
+        report = await db.community_reports.find_one({"id": report_id}, {"_id": 0})
+        if report:
+            await send_push_notification(
+                report["user_id"],
+                "Report Approved! ✅",
+                f"Your report at {report.get('location_name', 'Unknown')} has been approved and is now visible to the community.",
+                {"type": "report_approved", "report_id": report_id}
+            )
+    
+    return {"message": f"Report {new_status}"}
+
+@api_router.delete("/admin/reports/{report_id}")
+async def delete_report(report_id: str, user: User = Depends(require_auth)):
+    """Delete a community report"""
+    result = await db.community_reports.delete_one({"id": report_id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    return {"message": "Report deleted"}
+
+@api_router.get("/admin/stats")
+async def get_admin_stats(user: User = Depends(require_auth)):
+    """Get dashboard statistics for admin"""
+    pending_count = await db.community_reports.count_documents({"status": "pending"})
+    approved_count = await db.community_reports.count_documents({"status": "approved"})
+    rejected_count = await db.community_reports.count_documents({"status": "rejected"})
+    total_users = await db.users.count_documents({})
+    total_favorites = await db.favorites.count_documents({})
+    push_subscriptions = await db.push_subscriptions.count_documents({})
+    
+    return {
+        "reports": {
+            "pending": pending_count,
+            "approved": approved_count,
+            "rejected": rejected_count
+        },
+        "users": {
+            "total": total_users,
+            "with_push": push_subscriptions
+        },
+        "favorites": total_favorites
+    }
+
+# ==================== THAMES WATER API INTEGRATION ====================
+
+THAMES_WATER_API_KEY = os.environ.get("THAMES_WATER_API_KEY", "")
+
+@api_router.get("/sewage/thames-water")
+async def get_thames_water_edm_data():
+    """
+    Fetch real-time Event Duration Monitoring (EDM) data from Thames Water API.
+    
+    To enable this:
+    1. Register at https://data.thameswater.co.uk/
+    2. Create an application and get API key
+    3. Add THAMES_WATER_API_KEY to .env
+    """
+    if not THAMES_WATER_API_KEY:
+        return {
+            "status": "not_configured",
+            "message": "Thames Water API key not configured. Register at https://data.thameswater.co.uk/",
+            "incidents": get_mock_sewage_incidents()
+        }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            # Thames Water EDM API endpoint
+            url = "https://data.thameswater.co.uk/s/svc/data/v2/DischargeAlerts"
+            headers = {
+                "Authorization": f"Bearer {THAMES_WATER_API_KEY}",
+                "Accept": "application/json"
+            }
+            
+            response = await client_http.get(url, headers=headers)
+            
+            if response.status_code == 401:
+                return {"status": "auth_failed", "message": "Invalid API key"}
+            
+            if response.status_code != 200:
+                logger.error(f"Thames Water API error: {response.status_code}")
+                return {"status": "error", "incidents": get_mock_sewage_incidents()}
+            
+            data = response.json()
+            incidents = []
+            
+            for item in data.get("items", []):
+                incidents.append({
+                    "id": item.get("id", str(uuid.uuid4())),
+                    "site_name": item.get("siteName", "Unknown"),
+                    "water_company": "Thames Water",
+                    "status": "Discharging" if item.get("isDischarging") else "Not Discharging",
+                    "latitude": item.get("latitude"),
+                    "longitude": item.get("longitude"),
+                    "discharge_start": item.get("dischargeStartTime"),
+                    "discharge_stop": item.get("dischargeStopTime"),
+                    "duration_hours": item.get("durationHours"),
+                    "alert_past_48h": item.get("recentAlert", False),
+                    "receiving_water": item.get("receivingWater"),
+                    "permit_number": item.get("permitNumber")
+                })
+            
+            # Cache the results
+            await db.sewage_incidents.delete_many({"water_company": "Thames Water"})
+            if incidents:
+                await db.sewage_incidents.insert_many(incidents)
+            
+            return {"status": "live", "incidents": incidents, "count": len(incidents)}
+    except Exception as e:
+        logger.error(f"Thames Water API error: {e}")
+        return {"status": "error", "message": str(e), "incidents": get_mock_sewage_incidents()}
+
+@api_router.get("/sewage/refresh")
+async def refresh_all_sewage_data():
+    """Refresh sewage data from all configured water company APIs"""
+    results = {
+        "thames_water": None,
+        "using_sample_data": True
+    }
+    
+    # Try Thames Water
+    if THAMES_WATER_API_KEY:
+        tw_result = await get_thames_water_edm_data()
+        results["thames_water"] = tw_result.get("status")
+        if tw_result.get("status") == "live":
+            results["using_sample_data"] = False
+    
+    # Add other water companies here when APIs become available
+    # Yorkshire Water, United Utilities, etc.
+    
+    return results
 
 # ==================== ROOT ENDPOINT ====================
 
