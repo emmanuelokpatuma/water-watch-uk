@@ -171,15 +171,22 @@ export default function Dashboard() {
   const defaultZoom = 6;
 
   // Fetch stations
-  const fetchStations = useCallback(async () => {
+  const fetchStations = useCallback(async (retryCount = 0) => {
     try {
       const response = await fetch(`${API}/stations`);
       if (response.ok) {
         const data = await response.json();
         setStations(data.stations || []);
+      } else if (retryCount < 2) {
+        setTimeout(() => fetchStations(retryCount + 1), 1000);
+        return;
       }
     } catch (error) {
       console.error('Error fetching stations:', error);
+      if (retryCount < 2) {
+        setTimeout(() => fetchStations(retryCount + 1), 1000);
+        return;
+      }
       toast.error('Failed to load stations');
     } finally {
       setLoading(false);
