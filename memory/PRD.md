@@ -1,63 +1,121 @@
-# UK Water Safety Map - Product Requirements Document
+# WaterWatch UK - Product Requirements Document
 
-## Project Status: ENHANCED ✅
+## Project Status: MOBILE APP READY ✅
 
-Drinking water quality report feature added.
+Subscription system and Capacitor mobile app framework implemented.
 
 ## Original Problem Statement
-User requested to clone https://github.com/emmanuelokpatuma/water-watch-uk and add drinking water reports for areas.
+1. Clone https://github.com/emmanuelokpatuma/water-watch-uk
+2. Add drinking water reports for areas (DONE)
+3. Convert to mobile app for iOS/Android with £3/month subscription
 
 ## Architecture
-- **Frontend**: React 19, react-leaflet, Tailwind CSS, Shadcn UI, Recharts
-- **Backend**: FastAPI with async MongoDB (motor), pywebpush, PIL
+- **Frontend**: React 19, react-leaflet, Tailwind CSS, Shadcn UI
+- **Backend**: FastAPI with async MongoDB (motor)
+- **Mobile**: Capacitor (wraps React app for iOS/Android)
+- **Payments**: Stripe (web) + RevenueCat (mobile app stores)
 - **Database**: MongoDB
-- **Map**: Leaflet with CartoDB Dark Matter tiles
-- **AI**: OpenAI GPT-4o-mini via Emergent integrations
-- **Weather**: Open-Meteo API (free)
-- **Water Quality**: Environment Agency Water Quality API (free)
-- **Notifications**: WebPush with real VAPID keys
 
-## What's Been Implemented (March 2026)
+## Subscription Tiers
 
-### New Feature: Enhanced Drinking Water Quality Report
-- Integrated Environment Agency Water Quality API (free, no key required)
-- Real-time water quality measurements from monitoring points
-- Parameters tracked: pH, nitrate, ammonia, phosphate, dissolved oxygen, conductivity, temperature
-- Fallback to regional water company standards when EA data unavailable
-- Water hardness estimates by region (Thames Water: Hard, United Utilities: Soft, etc.)
+### FREE Tier
+- View map & 100+ monitoring stations
+- Basic water quality info
+- Search locations
+- Save up to 3 favorites
 
-### API Endpoints Added
-- `GET /api/home-water/quality?postcode={postcode}` - Enhanced with EA data
-- `GET /api/home-water/area-report?lat={lat}&lng={lng}&radius_km={km}` - Area-wide report
+### PRO Tier (£3/month or £30/year)
+- AI-powered safety insights (GPT-4o-mini)
+- Full water quality reports
+- Unlimited favorites
+- Push notifications
+- Sewage discharge alerts
+- 7-day historical data
+- Area water reports
+- Ad-free experience
 
-### Existing Features
-- Interactive UK map with 100+ water monitoring stations
-- Real-time data from Environment Agency API
-- Safety score visualization (1-10) with color-coded markers
-- AI-powered safety insights for each location
-- Google OAuth authentication
-- User favorites with persistence
-- Weather integration (Open-Meteo API)
-- Sewage monitoring (Thames Water API ready)
-- Community reports with moderation dashboard
-- Push notifications (WebPush)
-- Social sharing
+## What's Been Implemented
 
-## Data Sources (All FREE)
-1. **Environment Agency** - Water levels, flood warnings, bathing quality, water quality
-2. **Open-Meteo** - Weather forecasts
-3. **Postcodes.io** - UK postcode geocoding
-4. **Nominatim (OSM)** - Place search
+### March 2026 - Session 1
+- Enhanced drinking water quality with Environment Agency API
+- Added area-wide water report endpoint
 
-## Pages
-- `/` - Landing page
-- `/dashboard` - Main map dashboard
-- `/home-water` - Home water supply & quality checker
-- `/admin` - Moderation dashboard (requires auth)
+### March 2026 - Session 2 (Current)
+- **Subscription System**:
+  - SubscriptionContext for frontend feature gating
+  - SubscriptionPaywall component with pricing UI
+  - Backend subscription endpoints (create-checkout, webhook, cancel, restore, portal)
+  - Stripe integration for web payments
+  - Feature access control on API endpoints
+
+- **Mobile App Setup**:
+  - Capacitor configuration for iOS/Android
+  - RevenueCat integration for in-app purchases
+  - Build scripts and publishing guide
+
+- **Feature Gating**:
+  - AI insights locked for free users with "PRO" badge
+  - Favorites limited to 3 for free users
+  - Upgrade button in user dropdown menu
+
+## Files Added
+- `/app/frontend/src/context/SubscriptionContext.js` - Frontend state management
+- `/app/frontend/src/components/SubscriptionPaywall.js` - Paywall UI
+- `/app/frontend/capacitor.config.json` - Capacitor config
+- `/app/MOBILE_APP_GUIDE.md` - Complete publishing guide
+
+## API Endpoints Added
+- `GET /api/subscription/status` - Get user subscription status
+- `POST /api/subscription/create-checkout` - Create Stripe checkout session
+- `POST /api/subscription/webhook` - Handle Stripe webhooks
+- `POST /api/subscription/cancel` - Cancel subscription
+- `POST /api/subscription/restore` - Restore purchases
+- `GET /api/subscription/portal` - Get Stripe customer portal URL
+- `GET /api/subscription/check-feature/{feature}` - Check feature access
+
+## Required Setup for Production
+
+### Stripe (Web Payments)
+1. Create Stripe account at https://stripe.com
+2. Create product "WaterWatch Pro" with:
+   - Monthly price: £3.00/month
+   - Yearly price: £30.00/year
+3. Configure webhook endpoint
+4. Add keys to backend/.env:
+   ```
+   STRIPE_SECRET_KEY=sk_live_xxx
+   STRIPE_WEBHOOK_SECRET=whsec_xxx
+   STRIPE_PRICE_MONTHLY=price_xxx
+   STRIPE_PRICE_YEARLY=price_xxx
+   ```
+
+### RevenueCat (Mobile App Payments)
+1. Create RevenueCat account at https://revenuecat.com
+2. Configure App Store Connect and Google Play Console
+3. Create products in both stores
+4. Import products to RevenueCat
+5. Add API keys to capacitor.config.json
+
+### App Store Publishing
+- Apple Developer Account ($99/year)
+- Google Play Developer Account ($25 one-time)
+- See `/app/MOBILE_APP_GUIDE.md` for complete instructions
 
 ## Prioritized Backlog
-- P0: Complete ✅
-- P1: Thames Water API integration (requires API key registration)
-- P2: More water company integrations
-- P2: Historical water quality trends
-- P3: Water quality alerts/notifications
+- P0: ✅ Subscription system
+- P0: ✅ Mobile app framework
+- P1: Test with real Stripe keys
+- P1: Build iOS/Android apps with Capacitor
+- P2: Add analytics for subscription conversion
+- P3: A/B test pricing
+
+## Revenue Projections
+At £3/month with 30% Apple/15% Google cut:
+- 1,000 subscribers = £2,550/month after fees (web+mobile avg)
+- Break-even: ~50 subscribers covers hosting + developer accounts
+
+## Next Steps
+1. Get Stripe API keys and test checkout flow
+2. Build iOS app with `npx cap sync ios && npx cap open ios`
+3. Build Android app with `npx cap sync android && npx cap open android`
+4. Submit to app stores for review
