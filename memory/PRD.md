@@ -1,7 +1,8 @@
 # UK Water Safety Map - Product Requirements Document
 
-## Original Problem Statement
-Build a UK Water Safety Map application showing live river and water safety conditions for wild swimmers, anglers, kayakers, and paddleboarders.
+## Project Status: COMPLETE ✅
+
+All requested features have been implemented and tested.
 
 ## Architecture
 - **Frontend**: React 19, react-leaflet, Tailwind CSS, Shadcn UI, Recharts
@@ -10,7 +11,7 @@ Build a UK Water Safety Map application showing live river and water safety cond
 - **Map**: Leaflet with CartoDB Dark Matter tiles
 - **AI**: OpenAI GPT-4o-mini via Emergent integrations
 - **Weather**: Open-Meteo API (free)
-- **Notifications**: WebPush with service worker
+- **Notifications**: WebPush with real VAPID keys
 
 ## Complete Feature List
 
@@ -39,18 +40,28 @@ Build a UK Water Safety Map application showing live river and water safety cond
 - Thames Water, Yorkshire Water, United Utilities, South West Water
 - Duration tracking for active discharges
 - Toggleable map layer
+- **Thames Water API integration ready** (add THAMES_WATER_API_KEY to .env)
 
 ### Community Features
 - Submit observations, pollution reports, wildlife sightings
 - Star ratings (1-5)
-- Photo uploads (max 3 photos, 5MB each)
-- Pending moderation system
+- Photo uploads (max 3 photos, 5MB each, auto-resized)
+- Moderation system
 
-### Notifications
-- WebPush notifications with service worker
-- VAPID key infrastructure
+### Moderation Dashboard (/admin)
+- View pending/approved/rejected reports
+- Quick approve/reject buttons
+- Full report preview with photos
+- Delete functionality
+- Statistics overview (pending reports, users, push subscribers)
+- Pagination
+
+### Push Notifications
+- **Real VAPID keys generated and configured**
+- Service worker auto-registration on page load
 - Subscribe to flood/sewage/pollution alerts
 - Test notification endpoint
+- Background flood alert checking
 
 ### Social Sharing
 - Generate shareable safety reports
@@ -60,7 +71,6 @@ Build a UK Water Safety Map application showing live river and water safety cond
 
 ### Search & Navigation
 - Search by postcode, river name, or place
-- Uses postcodes.io and Nominatim APIs
 - Get directions via Google Maps
 
 ### History & Analytics
@@ -68,45 +78,96 @@ Build a UK Water Safety Map application showing live river and water safety cond
 - Min/max/avg/trend statistics
 - Interactive Recharts visualization
 
-## Technical Implementation
+## API Endpoints (45+ total)
 
-### Backend Endpoints (37 total)
-- Auth: `/api/auth/session`, `/api/auth/me`, `/api/auth/logout`
-- Stations: `/api/stations`, `/api/stations/{id}/readings`, `/api/stations/{id}/history`
-- Water: `/api/bathing-waters`, `/api/flood-warnings`
-- Search: `/api/search`
-- Favorites: `/api/favorites` (GET/POST/DELETE)
-- Notifications: `/api/notifications/subscriptions`, `/api/notifications/subscribe`, `/api/notifications/alerts`
-- Push: `/api/push/subscribe`, `/api/push/unsubscribe`, `/api/push/vapid-key`, `/api/push/send-test`
-- Weather: `/api/weather`
-- Sewage: `/api/sewage-incidents`, `/api/sewage-incidents/near`
-- Community: `/api/community/reports` (GET/POST)
-- Uploads: `/api/upload/photo`, `/api/uploads/{filename}`
-- Share: `/api/share/generate-report`, `/api/share/report/{id}`
-- AI: `/api/ai/safety-insight`
+### Authentication
+- POST `/api/auth/session` - Exchange OAuth session
+- GET `/api/auth/me` - Get current user
+- POST `/api/auth/logout` - Logout
 
-### Frontend Components
-- Landing page with hero and features
-- Dashboard with full-screen map
-- Glassmorphism sidebar with multiple sections
-- Detail panel with Info/Weather/History tabs
-- Community report dialog with photo upload
-- Share dialog with social integration
-- Service worker for push notifications
+### Water Data
+- GET `/api/stations` - Environment Agency stations
+- GET `/api/stations/{id}/readings` - Latest readings
+- GET `/api/stations/{id}/history` - 7-day history
+- GET `/api/bathing-waters` - Bathing water quality
+- GET `/api/flood-warnings` - Active flood warnings
+- GET `/api/search` - Location search
+
+### User Features
+- GET/POST/DELETE `/api/favorites` - User favorites
+
+### Notifications
+- GET `/api/notifications/subscriptions` - Get subscriptions
+- POST `/api/notifications/subscribe` - Subscribe to alerts
+- DELETE `/api/notifications/unsubscribe` - Unsubscribe
+- GET `/api/notifications/alerts` - Get user alerts
+
+### Push Notifications
+- POST `/api/push/subscribe` - WebPush subscription
+- DELETE `/api/push/unsubscribe` - Unsubscribe
+- GET `/api/push/vapid-key` - Get VAPID public key
+- POST `/api/push/send-test` - Send test notification
+
+### Weather
+- GET `/api/weather?lat={lat}&lng={lng}` - Weather data
+
+### Sewage
+- GET `/api/sewage-incidents` - All incidents
+- GET `/api/sewage-incidents/near` - Nearby incidents
+- GET `/api/sewage/thames-water` - Thames Water EDM data
+- GET `/api/sewage/refresh` - Refresh all data
+
+### Community
+- GET `/api/community/reports` - Approved reports
+- POST `/api/community/reports` - Submit report
+
+### Moderation (Admin)
+- GET `/api/admin/reports` - All reports (paginated)
+- PATCH `/api/admin/reports/{id}` - Moderate report
+- DELETE `/api/admin/reports/{id}` - Delete report
+- GET `/api/admin/stats` - Dashboard statistics
+
+### Uploads
+- POST `/api/upload/photo` - Upload photo
+- GET `/api/uploads/{filename}` - Serve uploaded file
+
+### Sharing
+- POST `/api/share/generate-report` - Generate share text
+- GET `/api/share/report/{id}` - Get shared report
+
+### AI
+- POST `/api/ai/safety-insight` - AI recommendations
+
+## Environment Variables
+
+```env
+MONGO_URL="mongodb://localhost:27017"
+DB_NAME="test_database"
+CORS_ORIGINS="*"
+EMERGENT_LLM_KEY=sk-emergent-...
+VAPID_PUBLIC_KEY=BBQ-GtSkrSOvRkBdV6X-...
+VAPID_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----..."
+VAPID_EMAIL=mailto:alerts@waterwatchuk.com
+
+# Optional - for live Thames Water data
+THAMES_WATER_API_KEY=your_key_here
+```
+
+## To Enable Thames Water Live Data
+1. Register at https://data.thameswater.co.uk/
+2. Create an application
+3. Get API key
+4. Add `THAMES_WATER_API_KEY=your_key` to `/app/backend/.env`
+5. Restart backend
+
+## Pages
+- `/` - Landing page
+- `/dashboard` - Main map dashboard
+- `/admin` - Moderation dashboard (requires auth)
 
 ## Data Sources
 1. **Environment Agency** - Live water levels, flood warnings, bathing quality
 2. **Open-Meteo** - Weather forecasts
 3. **Postcodes.io** - UK postcode geocoding
 4. **Nominatim (OSM)** - Place search
-5. **Water Companies** - Sewage discharge data (demo data, real API requires registration)
-
-## Notes for Production
-- Generate real VAPID keys for WebPush delivery
-- Register at https://data.thameswater.co.uk/ for live EDM API
-- Add report moderation dashboard
-- Implement email notification digest
-- Consider PWA for offline mode
-
-## Project Status: COMPLETE
-All requested features implemented and tested.
+5. **Water Companies** - Sewage discharge data (mock data until API keys added)
