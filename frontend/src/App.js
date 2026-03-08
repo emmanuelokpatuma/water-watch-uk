@@ -8,6 +8,7 @@ import LandingPage from "./pages/LandingPage";
 import Dashboard from "./pages/Dashboard";
 import AuthCallback from "./pages/AuthCallback";
 import AdminDashboard from "./pages/AdminDashboard";
+import HomeWater from "./pages/HomeWater";
 
 // Route handler that checks for session_id in hash
 function AppRouter() {
@@ -24,6 +25,7 @@ function AppRouter() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="/home-water" element={<HomeWater />} />
       <Route path="*" element={<LandingPage />} />
     </Routes>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
+import { Link } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../context/AuthContext';
@@ -42,7 +43,8 @@ import {
   Eye,
   Sun,
   CloudRain,
-  Users
+  Users,
+  Home
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -891,6 +893,19 @@ export default function Dashboard() {
 
           {/* Sidebar Content */}
           <ScrollArea className="flex-1 p-4">
+            {/* Home Water Supply Link */}
+            <Link to="/home-water" className="block mb-4">
+              <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors">
+                <div className="flex items-center gap-3">
+                  <Home className="w-5 h-5 text-cyan-400" />
+                  <div>
+                    <div className="text-cyan-400 text-sm font-medium">Home Water Supply</div>
+                    <div className="text-slate-500 text-xs">Check tap water & supply issues</div>
+                  </div>
+                </div>
+              </div>
+            </Link>
+
             {/* Notification Toggle (if logged in) */}
             {user && (
               <div className="mb-4 p-3 rounded-lg bg-slate-800/50 border border-slate-700 flex items-center justify-between">

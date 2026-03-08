@@ -1598,6 +1598,346 @@ async def refresh_all_sewage_data():
     
     return results
 
+# ==================== HOUSEHOLD WATER SUPPLY ====================
+
+class WaterSupplyIncident(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    postcode: str
+    area: str
+    water_company: str
+    incident_type: str  # supply_interruption, low_pressure, discoloured_water, pipe_burst, planned_works
+    status: str  # active, resolved, planned
+    description: str
+    affected_properties: Optional[int] = None
+    start_time: Optional[str] = None
+    estimated_restore: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class HomeWaterIssueReport(BaseModel):
+    issue_type: str  # low_pressure, no_water, discoloured, taste_smell, leak
+    postcode: str
+    address: Optional[str] = None
+    description: str
+    severity: int = 3  # 1-5
+
+@api_router.get("/home-water/incidents")
+async def get_water_supply_incidents(postcode: Optional[str] = None):
+    """Get current water supply incidents affecting homes"""
+    incidents = []
+    
+    # Try to fetch from water company APIs (when configured)
+    # For now, return sample data to demonstrate the feature
+    
+    sample_incidents = get_sample_supply_incidents()
+    
+    if postcode:
+        # Filter by postcode area (first part of postcode)
+        postcode_area = postcode.upper().split()[0] if ' ' in postcode else postcode[:3].upper()
+        incidents = [i for i in sample_incidents if i.get("postcode", "").startswith(postcode_area)]
+    else:
+        incidents = sample_incidents
+    
+    # Get summary stats
+    active_count = len([i for i in incidents if i["status"] == "active"])
+    planned_count = len([i for i in incidents if i["status"] == "planned"])
+    
+    return {
+        "incidents": incidents,
+        "summary": {
+            "total": len(incidents),
+            "active": active_count,
+            "planned": planned_count
+        }
+    }
+
+@api_router.get("/home-water/incidents/near")
+async def get_nearby_supply_incidents(lat: float, lng: float, radius_km: float = 10):
+    """Get water supply incidents near a location"""
+    incidents = get_sample_supply_incidents()
+    
+    nearby = []
+    for incident in incidents:
+        if incident.get("latitude") and incident.get("longitude"):
+            dlat = abs(incident["latitude"] - lat) * 111
+            dlng = abs(incident["longitude"] - lng) * 111 * 0.7
+            distance = (dlat**2 + dlng**2) ** 0.5
+            
+            if distance <= radius_km:
+                incident["distance_km"] = round(distance, 1)
+                nearby.append(incident)
+    
+    nearby.sort(key=lambda x: x.get("distance_km", 999))
+    return {"incidents": nearby}
+
+@api_router.get("/home-water/quality")
+async def get_drinking_water_quality(postcode: str):
+    """Get drinking water quality information for a postcode"""
+    # Determine water company based on postcode
+    postcode_upper = postcode.upper()
+    water_company = determine_water_company(postcode_upper)
+    
+    # Sample water quality data
+    quality_data = {
+        "postcode": postcode_upper,
+        "water_company": water_company,
+        "quality_rating": "Excellent",
+        "last_tested": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(),
+        "parameters": {
+            "chlorine": {"value": 0.3, "unit": "mg/L", "status": "normal", "limit": 0.5},
+            "hardness": {"value": 250, "unit": "mg/L CaCO3", "status": "moderately_hard", "description": "Moderately Hard"},
+            "ph": {"value": 7.4, "unit": "pH", "status": "normal", "range": "6.5-9.5"},
+            "lead": {"value": 0.002, "unit": "mg/L", "status": "safe", "limit": 0.01},
+            "nitrate": {"value": 25, "unit": "mg/L", "status": "normal", "limit": 50},
+            "fluoride": {"value": 0.1, "unit": "mg/L", "status": "normal", "limit": 1.5}
+        },
+        "source": "Reservoir/Treatment Works",
+        "treatment": ["Filtration", "Chlorination", "pH adjustment"],
+        "meets_standards": True,
+        "notes": "Your water meets all UK drinking water standards."
+    }
+    
+    return quality_data
+
+@api_router.get("/home-water/planned-works")
+async def get_planned_works(postcode: Optional[str] = None):
+    """Get planned maintenance works that may affect water supply"""
+    works = get_sample_planned_works()
+    
+    if postcode:
+        postcode_area = postcode.upper().split()[0] if ' ' in postcode else postcode[:3].upper()
+        works = [w for w in works if w.get("postcode_area", "").startswith(postcode_area[:2])]
+    
+    return {"planned_works": works}
+
+@api_router.post("/home-water/report-issue")
+async def report_home_water_issue(report: HomeWaterIssueReport, user: User = Depends(require_auth)):
+    """Report a water issue at home"""
+    issue_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "user_name": user.name,
+        "issue_type": report.issue_type,
+        "postcode": report.postcode.upper(),
+        "address": report.address,
+        "description": report.description,
+        "severity": report.severity,
+        "status": "reported",
+        "water_company": determine_water_company(report.postcode.upper()),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.home_water_issues.insert_one(issue_doc)
+    issue_doc.pop("_id", None)
+    
+    # In production, this would forward to the water company
+    return {
+        "message": "Issue reported successfully",
+        "reference": issue_doc["id"][:8].upper(),
+        "water_company": issue_doc["water_company"],
+        "next_steps": f"Your issue has been logged with reference {issue_doc['id'][:8].upper()}. {issue_doc['water_company']} typically responds within 24 hours for urgent issues."
+    }
+
+@api_router.get("/home-water/my-issues")
+async def get_my_water_issues(user: User = Depends(require_auth)):
+    """Get user's reported water issues"""
+    issues = await db.home_water_issues.find(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    
+    return {"issues": issues}
+
+@api_router.get("/home-water/company-info")
+async def get_water_company_info(postcode: str):
+    """Get water company information for a postcode"""
+    postcode_upper = postcode.upper()
+    company = determine_water_company(postcode_upper)
+    
+    company_info = {
+        "Thames Water": {
+            "name": "Thames Water",
+            "phone": "0800 316 9800",
+            "emergency": "0800 714 614",
+            "website": "https://www.thameswater.co.uk",
+            "coverage": "London and Thames Valley",
+            "report_leak": "https://www.thameswater.co.uk/help/report-a-problem"
+        },
+        "Yorkshire Water": {
+            "name": "Yorkshire Water",
+            "phone": "0345 124 2424",
+            "emergency": "0345 124 2424",
+            "website": "https://www.yorkshirewater.com",
+            "coverage": "Yorkshire region",
+            "report_leak": "https://www.yorkshirewater.com/report"
+        },
+        "United Utilities": {
+            "name": "United Utilities",
+            "phone": "0345 672 3723",
+            "emergency": "0345 672 3723",
+            "website": "https://www.unitedutilities.com",
+            "coverage": "North West England",
+            "report_leak": "https://www.unitedutilities.com/emergencies/report-a-problem/"
+        },
+        "Severn Trent": {
+            "name": "Severn Trent Water",
+            "phone": "0345 750 0500",
+            "emergency": "0800 783 4444",
+            "website": "https://www.stwater.co.uk",
+            "coverage": "Midlands",
+            "report_leak": "https://www.stwater.co.uk/my-supply/report-an-issue/"
+        },
+        "Anglian Water": {
+            "name": "Anglian Water",
+            "phone": "0345 791 9155",
+            "emergency": "0800 145 145",
+            "website": "https://www.anglianwater.co.uk",
+            "coverage": "East of England",
+            "report_leak": "https://www.anglianwater.co.uk/help-and-advice/report-an-issue/"
+        }
+    }
+    
+    info = company_info.get(company, {
+        "name": company,
+        "phone": "Contact your local water company",
+        "website": "https://www.water.org.uk/customers/find-your-supplier/"
+    })
+    
+    info["postcode"] = postcode_upper
+    return info
+
+def determine_water_company(postcode: str) -> str:
+    """Determine water company based on postcode"""
+    postcode_prefix = postcode[:2].upper()
+    
+    # Simplified mapping - in production, use proper postcode lookup
+    thames_areas = ["W", "WC", "EC", "E", "N", "NW", "SE", "SW", "TW", "UB", "HA", "EN", "WD", "AL", "SG", "HP", "SL", "RG", "OX", "MK", "LU", "GU"]
+    yorkshire_areas = ["LS", "BD", "HX", "HD", "WF", "HU", "DN", "S", "YO", "HG", "DL"]
+    united_utilities_areas = ["M", "OL", "BL", "WN", "PR", "L", "WA", "SK", "CW", "CH", "LA", "CA", "BB"]
+    severn_trent_areas = ["B", "CV", "WS", "WV", "DY", "ST", "DE", "NG", "LE", "NN"]
+    anglian_areas = ["PE", "CB", "IP", "NR", "CO", "CM", "SS", "RM", "IG", "EN"]
+    
+    for prefix in thames_areas:
+        if postcode_prefix.startswith(prefix):
+            return "Thames Water"
+    for prefix in yorkshire_areas:
+        if postcode_prefix.startswith(prefix):
+            return "Yorkshire Water"
+    for prefix in united_utilities_areas:
+        if postcode_prefix.startswith(prefix):
+            return "United Utilities"
+    for prefix in severn_trent_areas:
+        if postcode_prefix.startswith(prefix):
+            return "Severn Trent"
+    for prefix in anglian_areas:
+        if postcode_prefix.startswith(prefix):
+            return "Anglian Water"
+    
+    return "Your Local Water Company"
+
+def get_sample_supply_incidents():
+    """Sample water supply incidents for demonstration"""
+    return [
+        {
+            "id": "ws_001",
+            "postcode": "SW1A",
+            "area": "Westminster, London",
+            "water_company": "Thames Water",
+            "incident_type": "pipe_burst",
+            "status": "active",
+            "description": "Emergency repair work due to burst water main. Some properties may experience low pressure or discoloured water.",
+            "affected_properties": 150,
+            "start_time": (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat(),
+            "estimated_restore": (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat(),
+            "latitude": 51.5014,
+            "longitude": -0.1419
+        },
+        {
+            "id": "ws_002",
+            "postcode": "LS1",
+            "area": "Leeds City Centre",
+            "water_company": "Yorkshire Water",
+            "incident_type": "supply_interruption",
+            "status": "active",
+            "description": "Water supply interrupted due to essential maintenance. Bottled water available at local distribution point.",
+            "affected_properties": 85,
+            "start_time": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+            "estimated_restore": (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat(),
+            "latitude": 53.7965,
+            "longitude": -1.5478
+        },
+        {
+            "id": "ws_003",
+            "postcode": "M1",
+            "area": "Manchester City Centre",
+            "water_company": "United Utilities",
+            "incident_type": "low_pressure",
+            "status": "active",
+            "description": "Some customers may experience lower than normal water pressure while we carry out repairs.",
+            "affected_properties": 200,
+            "start_time": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            "estimated_restore": (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat(),
+            "latitude": 53.4808,
+            "longitude": -2.2426
+        },
+        {
+            "id": "ws_004",
+            "postcode": "B1",
+            "area": "Birmingham City Centre",
+            "water_company": "Severn Trent",
+            "incident_type": "discoloured_water",
+            "status": "resolved",
+            "description": "Discoloured water reports following routine maintenance. Issue now resolved.",
+            "affected_properties": 50,
+            "start_time": (datetime.now(timezone.utc) - timedelta(hours=8)).isoformat(),
+            "estimated_restore": None,
+            "latitude": 52.4862,
+            "longitude": -1.8904
+        }
+    ]
+
+def get_sample_planned_works():
+    """Sample planned maintenance works"""
+    return [
+        {
+            "id": "pw_001",
+            "postcode_area": "SW",
+            "area": "South West London",
+            "water_company": "Thames Water",
+            "work_type": "pipe_replacement",
+            "description": "Essential pipe replacement work. Brief supply interruptions expected between 10pm-6am.",
+            "start_date": (datetime.now(timezone.utc) + timedelta(days=3)).strftime("%Y-%m-%d"),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d"),
+            "impact": "Brief interruptions during night hours",
+            "affected_postcodes": ["SW11", "SW12", "SW17"]
+        },
+        {
+            "id": "pw_002",
+            "postcode_area": "LS",
+            "area": "Leeds",
+            "water_company": "Yorkshire Water",
+            "work_type": "meter_installation",
+            "description": "Smart meter installation programme. No supply interruption expected.",
+            "start_date": (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d"),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%d"),
+            "impact": "No interruption - access to property may be required",
+            "affected_postcodes": ["LS1", "LS2", "LS3", "LS6"]
+        },
+        {
+            "id": "pw_003",
+            "postcode_area": "M",
+            "area": "Greater Manchester",
+            "water_company": "United Utilities",
+            "work_type": "reservoir_maintenance",
+            "description": "Annual reservoir maintenance. Supply from alternative sources - no customer impact expected.",
+            "start_date": (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%d"),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=12)).strftime("%Y-%m-%d"),
+            "impact": "None expected",
+            "affected_postcodes": []
+        }
+    ]
+
 # ==================== ROOT ENDPOINT ====================
 
 @api_router.get("/")
