@@ -90,6 +90,27 @@ class SafetyInsightRequest(BaseModel):
     flood_risk: str
     activity: str = "swimming"
 
+class NotificationSubscription(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    station_ids: List[str] = []
+    alert_types: List[str] = ["flood", "sewage", "pollution"]
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class NotificationSubscriptionCreate(BaseModel):
+    station_ids: List[str] = []
+    alert_types: List[str] = ["flood", "sewage", "pollution"]
+
+class ShareReportRequest(BaseModel):
+    station_id: str
+    station_name: str
+    river_name: Optional[str] = None
+    safety_score: int
+    pollution_risk: str
+    flood_risk: str
+    water_level: Optional[float] = None
+
 # ==================== AUTH HELPERS ====================
 
 async def get_current_user(request: Request) -> Optional[User]:
@@ -522,6 +543,188 @@ Give 1-2 sentences of practical advice."""
     except Exception as e:
         logger.error(f"AI insight error: {e}")
         return {"insight": get_fallback_insight(request)}
+
+# ==================== NOTIFICATIONS ====================
+
+@api_router.get("/notifications/subscriptions")
+async def get_notification_subscriptions(user: User = Depends(require_auth)):
+    """Get user's notification subscriptions"""
+    subscriptions = await db.notification_subscriptions.find(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    ).to_list(100)
+    return {"subscriptions": subscriptions}
+
+@api_router.post("/notifications/subscribe")
+async def subscribe_to_notifications(
+    subscription: NotificationSubscriptionCreate, 
+    user: User = Depends(require_auth)
+):
+    """Subscribe to notifications for stations"""
+    sub_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "station_ids": subscription.station_ids,
+        "alert_types": subscription.alert_types,
+        "enabled": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Update or create subscription
+    await db.notification_subscriptions.update_one(
+        {"user_id": user.user_id},
+        {"$set": sub_doc},
+        upsert=True
+    )
+    
+    return {"message": "Subscription updated", "subscription": sub_doc}
+
+@api_router.delete("/notifications/unsubscribe")
+async def unsubscribe_from_notifications(user: User = Depends(require_auth)):
+    """Unsubscribe from all notifications"""
+    await db.notification_subscriptions.delete_many({"user_id": user.user_id})
+    return {"message": "Unsubscribed from all notifications"}
+
+@api_router.get("/notifications/alerts")
+async def get_user_alerts(user: User = Depends(require_auth)):
+    """Get relevant alerts for user's subscribed stations"""
+    subscription = await db.notification_subscriptions.find_one(
+        {"user_id": user.user_id, "enabled": True},
+        {"_id": 0}
+    )
+    
+    if not subscription:
+        return {"alerts": []}
+    
+    # Fetch current flood warnings
+    alerts = []
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            response = await client_http.get(
+                "https://environment.data.gov.uk/flood-monitoring/id/floods",
+                params={"_limit": 20}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get("items", []):
+                    alerts.append({
+                        "type": "flood",
+                        "severity": item.get("severityLevel", 3),
+                        "title": "Flood Warning",
+                        "description": item.get("description", ""),
+                        "area": item.get("floodArea", {}).get("label", ""),
+                        "time": item.get("timeRaised")
+                    })
+    except Exception as e:
+        logger.error(f"Error fetching alerts: {e}")
+    
+    return {"alerts": alerts[:10]}
+
+# ==================== SHARE REPORT ====================
+
+@api_router.post("/share/generate-report")
+async def generate_share_report(request: ShareReportRequest):
+    """Generate a shareable safety report"""
+    report_id = str(uuid.uuid4())[:8]
+    
+    # Create share text
+    safety_emoji = "🟢" if request.safety_score >= 8 else "🟡" if request.safety_score >= 5 else "🔴"
+    
+    share_text = f"""🌊 Water Safety Report - {request.station_name}
+{f'📍 {request.river_name}' if request.river_name else ''}
+
+{safety_emoji} Safety Score: {request.safety_score}/10
+💧 Pollution Risk: {request.pollution_risk}
+🌊 Flood Risk: {request.flood_risk}
+{f'📏 Water Level: {request.water_level}m' if request.water_level else ''}
+
+Check live conditions at WaterWatchUK
+#WaterSafety #UKRivers #WildSwimming"""
+
+    # Store report for retrieval
+    report_doc = {
+        "report_id": report_id,
+        "station_id": request.station_id,
+        "station_name": request.station_name,
+        "river_name": request.river_name,
+        "safety_score": request.safety_score,
+        "pollution_risk": request.pollution_risk,
+        "flood_risk": request.flood_risk,
+        "water_level": request.water_level,
+        "share_text": share_text,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.share_reports.insert_one(report_doc)
+    
+    return {
+        "report_id": report_id,
+        "share_text": share_text,
+        "twitter_url": f"https://twitter.com/intent/tweet?text={share_text[:200]}...",
+        "facebook_url": f"https://www.facebook.com/sharer/sharer.php"
+    }
+
+@api_router.get("/share/report/{report_id}")
+async def get_share_report(report_id: str):
+    """Get a shared safety report"""
+    report = await db.share_reports.find_one(
+        {"report_id": report_id},
+        {"_id": 0}
+    )
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    return report
+
+# ==================== HISTORICAL DATA ====================
+
+@api_router.get("/stations/{station_id}/history")
+async def get_station_history(station_id: str, days: int = 7):
+    """Get historical readings for a station"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            # Calculate date range
+            end_date = datetime.now(timezone.utc)
+            start_date = end_date - timedelta(days=days)
+            
+            url = f"https://environment.data.gov.uk/flood-monitoring/id/stations/{station_id}/readings"
+            params = {
+                "since": start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "_sorted": "",
+                "_limit": 500
+            }
+            
+            response = await client_http.get(url, params=params)
+            
+            if response.status_code != 200:
+                return {"history": [], "summary": {}}
+            
+            data = response.json()
+            readings = []
+            
+            for item in data.get("items", []):
+                readings.append({
+                    "datetime": item.get("dateTime"),
+                    "value": item.get("value")
+                })
+            
+            # Calculate summary statistics
+            values = [r["value"] for r in readings if r["value"] is not None]
+            summary = {}
+            if values:
+                summary = {
+                    "min": round(min(values), 2),
+                    "max": round(max(values), 2),
+                    "avg": round(sum(values) / len(values), 2),
+                    "latest": values[0] if values else None,
+                    "trend": "rising" if len(values) > 1 and values[0] > values[-1] else "falling" if len(values) > 1 and values[0] < values[-1] else "stable"
+                }
+            
+            return {"history": readings, "summary": summary}
+    except Exception as e:
+        logger.error(f"Error fetching history: {e}")
+        return {"history": [], "summary": {}}
 
 # ==================== HELPER FUNCTIONS ====================
 

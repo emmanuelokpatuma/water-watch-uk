@@ -216,6 +216,207 @@ class WaterSafetyAPITester:
         except Exception as e:
             self.log_test_result("AI insight endpoint", False, error_msg=str(e))
 
+    def test_bathing_waters_endpoint(self):
+        """Test bathing waters endpoint - NEW FEATURE"""
+        print("\n🔍 Testing Bathing Waters Endpoint...")
+        
+        try:
+            response = self.session.get(f"{API_BASE}/bathing-waters")
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                bathing_waters = data.get("bathing_waters", [])
+                
+                # Check we have bathing waters data
+                if len(bathing_waters) > 0:
+                    self.log_test_result("Bathing waters data retrieval", True, {"count": len(bathing_waters)})
+                    
+                    # Check first bathing water structure
+                    first_beach = bathing_waters[0]
+                    required_fields = ["id", "name", "latitude", "longitude", "classification"]
+                    
+                    if all(field in first_beach for field in required_fields):
+                        self.log_test_result("Bathing water data structure", True, {"sample_beach": first_beach})
+                        
+                        # Check classification values are valid
+                        classifications = [beach.get("classification") for beach in bathing_waters]
+                        valid_classifications = ["Excellent", "Good", "Sufficient", "Poor"]
+                        if all(c in valid_classifications for c in classifications if c):
+                            self.log_test_result("Valid bathing water classifications", True, {"classifications": list(set(classifications))})
+                        else:
+                            self.log_test_result("Valid bathing water classifications", False, error_msg=f"Invalid classifications found")
+                    else:
+                        missing = [f for f in required_fields if f not in first_beach]
+                        self.log_test_result("Bathing water data structure", False, error_msg=f"Missing fields: {missing}")
+                else:
+                    self.log_test_result("Bathing waters data retrieval", True, {"count": 0, "note": "No bathing waters available"})
+            else:
+                self.log_test_result("Bathing waters endpoint", False, error_msg=f"Status {response.status_code}")
+                
+        except Exception as e:
+            self.log_test_result("Bathing waters endpoint", False, error_msg=str(e))
+
+    def test_historical_data_endpoint(self):
+        """Test historical data endpoint - NEW FEATURE"""
+        print("\n🔍 Testing Historical Data Endpoint...")
+        
+        # First get a station ID from stations endpoint
+        try:
+            stations_response = self.session.get(f"{API_BASE}/stations")
+            if stations_response.status_code == 200:
+                stations_data = stations_response.json()
+                stations = stations_data.get("stations", [])
+                if stations:
+                    test_station_id = stations[0]["station_id"]
+                    
+                    # Test historical data endpoint
+                    response = self.session.get(f"{API_BASE}/stations/{test_station_id}/history?days=7")
+                    success = response.status_code == 200
+                    
+                    if success:
+                        data = response.json()
+                        history = data.get("history", [])
+                        summary = data.get("summary", {})
+                        
+                        self.log_test_result("Historical data retrieval", True, {
+                            "station_id": test_station_id,
+                            "history_points": len(history),
+                            "has_summary": len(summary) > 0
+                        })
+                        
+                        # Check summary contains required stats
+                        required_summary_fields = ["min", "max", "avg", "trend"]
+                        if summary and all(field in summary for field in required_summary_fields):
+                            self.log_test_result("Historical data summary structure", True, {"summary": summary})
+                            
+                            # Check trend values are valid
+                            if summary.get("trend") in ["rising", "falling", "stable"]:
+                                self.log_test_result("Valid trend analysis", True, {"trend": summary.get("trend")})
+                            else:
+                                self.log_test_result("Valid trend analysis", False, error_msg=f"Invalid trend: {summary.get('trend')}")
+                        else:
+                            missing = [f for f in required_summary_fields if f not in summary]
+                            self.log_test_result("Historical data summary structure", False, error_msg=f"Missing summary fields: {missing}")
+                        
+                        # Check history data structure
+                        if history:
+                            first_reading = history[0]
+                            if "datetime" in first_reading and "value" in first_reading:
+                                self.log_test_result("Historical reading structure", True, {"sample_reading": first_reading})
+                            else:
+                                self.log_test_result("Historical reading structure", False, error_msg="Missing datetime or value")
+                        else:
+                            self.log_test_result("Historical reading structure", True, {"note": "No historical data available"})
+                    else:
+                        self.log_test_result("Historical data endpoint", False, error_msg=f"Status {response.status_code}")
+                else:
+                    self.log_test_result("Historical data endpoint", False, error_msg="No stations available for testing")
+            else:
+                self.log_test_result("Historical data endpoint", False, error_msg="Failed to get stations for testing")
+                
+        except Exception as e:
+            self.log_test_result("Historical data endpoint", False, error_msg=str(e))
+
+    def test_share_report_endpoint(self):
+        """Test share report generation - NEW FEATURE"""
+        print("\n🔍 Testing Share Report Endpoint...")
+        
+        test_payload = {
+            "station_id": "test_station_1",
+            "station_name": "River Thames at Richmond",
+            "river_name": "River Thames",
+            "safety_score": 8,
+            "pollution_risk": "Low",
+            "flood_risk": "None",
+            "water_level": 2.1
+        }
+        
+        try:
+            response = self.session.post(
+                f"{API_BASE}/share/generate-report",
+                json=test_payload,
+                headers={"Content-Type": "application/json"}
+            )
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                required_fields = ["report_id", "share_text", "twitter_url", "facebook_url"]
+                
+                if all(field in data for field in required_fields):
+                    self.log_test_result("Share report generation", True, {
+                        "report_id": data.get("report_id"),
+                        "share_text_length": len(data.get("share_text", ""))
+                    })
+                    
+                    # Check share text contains expected elements (emojis, hashtags)
+                    share_text = data.get("share_text", "")
+                    if "🌊" in share_text and "#" in share_text and "Safety Score:" in share_text:
+                        self.log_test_result("Share text format with emojis/hashtags", True, {"contains_emojis_and_hashtags": True})
+                    else:
+                        self.log_test_result("Share text format with emojis/hashtags", False, error_msg="Missing emojis or hashtags in share text")
+                    
+                    # Test retrieving the generated report
+                    report_id = data.get("report_id")
+                    if report_id:
+                        report_response = self.session.get(f"{API_BASE}/share/report/{report_id}")
+                        if report_response.status_code == 200:
+                            self.log_test_result("Share report retrieval", True, {"report_id": report_id})
+                        else:
+                            self.log_test_result("Share report retrieval", False, error_msg=f"Status {report_response.status_code}")
+                else:
+                    missing = [f for f in required_fields if f not in data]
+                    self.log_test_result("Share report generation", False, error_msg=f"Missing fields: {missing}")
+            else:
+                self.log_test_result("Share report endpoint", False, error_msg=f"Status {response.status_code}")
+                
+        except Exception as e:
+            self.log_test_result("Share report endpoint", False, error_msg=str(e))
+
+    def test_notification_endpoints(self):
+        """Test notification subscription endpoints - NEW FEATURE"""
+        print("\n🔍 Testing Notification Endpoints...")
+        
+        # Test getting subscriptions without authentication (should return 401)
+        try:
+            response = self.session.get(f"{API_BASE}/notifications/subscriptions")
+            if response.status_code == 401:
+                self.log_test_result("Notification subscriptions (unauthenticated)", True, {"expected_401": True})
+            else:
+                self.log_test_result("Notification subscriptions (unauthenticated)", False, error_msg=f"Expected 401, got {response.status_code}")
+        except Exception as e:
+            self.log_test_result("Notification subscriptions endpoint", False, error_msg=str(e))
+
+        # Test subscribing without authentication (should return 401)
+        test_subscription = {
+            "station_ids": ["test_station_1", "test_station_2"],
+            "alert_types": ["flood", "sewage", "pollution"]
+        }
+        
+        try:
+            response = self.session.post(
+                f"{API_BASE}/notifications/subscribe",
+                json=test_subscription,
+                headers={"Content-Type": "application/json"}
+            )
+            if response.status_code == 401:
+                self.log_test_result("Notification subscribe (unauthenticated)", True, {"expected_401": True})
+            else:
+                self.log_test_result("Notification subscribe (unauthenticated)", False, error_msg=f"Expected 401, got {response.status_code}")
+        except Exception as e:
+            self.log_test_result("Notification subscribe endpoint", False, error_msg=str(e))
+
+        # Test getting alerts without authentication (should return 401)
+        try:
+            response = self.session.get(f"{API_BASE}/notifications/alerts")
+            if response.status_code == 401:
+                self.log_test_result("Notification alerts (unauthenticated)", True, {"expected_401": True})
+            else:
+                self.log_test_result("Notification alerts (unauthenticated)", False, error_msg=f"Expected 401, got {response.status_code}")
+        except Exception as e:
+            self.log_test_result("Notification alerts endpoint", False, error_msg=str(e))
+
     def test_auth_endpoints(self):
         """Test authentication endpoints (without actual login)"""
         print("\n🔍 Testing Auth Endpoints...")
@@ -249,9 +450,13 @@ class WaterSafetyAPITester:
         # Run all test suites
         self.test_health_endpoints()
         self.test_stations_endpoint()
+        self.test_bathing_waters_endpoint()  # NEW
         self.test_flood_warnings_endpoint() 
+        self.test_historical_data_endpoint()  # NEW
         self.test_search_endpoint()
         self.test_ai_insight_endpoint()
+        self.test_share_report_endpoint()  # NEW
+        self.test_notification_endpoints()  # NEW
         self.test_auth_endpoints()
         
         # Print summary

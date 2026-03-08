@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-03-08T07:44:03.728232",
+  "timestamp": "2026-03-08T07:56:23.552471",
   "backend_url": "https://water-watch-uk.preview.emergentagent.com",
   "summary": {
-    "tests_run": 13,
-    "tests_passed": 13,
+    "tests_run": 26,
+    "tests_passed": 26,
     "success_rate": 100.0
   },
   "failed_tests": [],
@@ -20,7 +20,7 @@
       "success": true,
       "response_data": {
         "status": "healthy",
-        "timestamp": "2026-03-08T07:43:58.085092+00:00"
+        "timestamp": "2026-03-08T07:56:18.354390+00:00"
       },
       "error": null
     },
@@ -42,7 +42,7 @@
           "latitude": 51.874767,
           "longitude": -1.740083,
           "status": "http://environment.data.gov.uk/flood-monitoring/def/core/statusActive",
-          "safety_score": 6,
+          "safety_score": 9,
           "pollution_risk": "Low",
           "flood_risk": "None",
           "water_level_unit": "mASD"
@@ -54,6 +54,36 @@
       "success": true,
       "response_data": {
         "count": 100
+      },
+      "error": null
+    },
+    "Bathing waters data retrieval": {
+      "success": true,
+      "response_data": {
+        "count": 3
+      },
+      "error": null
+    },
+    "Bathing water data structure": {
+      "success": true,
+      "response_data": {
+        "sample_beach": {
+          "id": "bw_1",
+          "name": "Blackpool Central",
+          "latitude": 53.8175,
+          "longitude": -3.0533,
+          "classification": "Good"
+        }
+      },
+      "error": null
+    },
+    "Valid bathing water classifications": {
+      "success": true,
+      "response_data": {
+        "classifications": [
+          "Good",
+          "Excellent"
+        ]
       },
       "error": null
     },
@@ -75,6 +105,45 @@
           "message": "River levels remain high following recent rainfall. Flooding is possible on the 7 March 2026.\u00a0Locations most affected will be low lying land and roads near rivers. Our forecasts indicate that flooding to properties isn't likely and therefore flood warnings are not expected to be issued. We are closely monitoring the situation.\u00a0 Take care and avoid walking, cycling or driving through flood water. Avoid low lying roads, near rivers which may be flooded. This message will be updated by 5pm on 8 March 2026 or as the situation changes.\n",
           "area": "",
           "time_raised": "2026-03-07T15:09:16"
+        }
+      },
+      "error": null
+    },
+    "Historical data retrieval": {
+      "success": true,
+      "response_data": {
+        "station_id": "1029TH",
+        "history_points": 500,
+        "has_summary": true
+      },
+      "error": null
+    },
+    "Historical data summary structure": {
+      "success": true,
+      "response_data": {
+        "summary": {
+          "min": 0.05,
+          "max": 0.36,
+          "avg": 0.21,
+          "latest": 0.058,
+          "trend": "falling"
+        }
+      },
+      "error": null
+    },
+    "Valid trend analysis": {
+      "success": true,
+      "response_data": {
+        "trend": "falling"
+      },
+      "error": null
+    },
+    "Historical reading structure": {
+      "success": true,
+      "response_data": {
+        "sample_reading": {
+          "datetime": "2026-03-08T07:15:00Z",
+          "value": 0.058
         }
       },
       "error": null
@@ -103,14 +172,57 @@
     "Place name search": {
       "success": true,
       "response_data": {
-        "results_count": 0
+        "results_count": 2
       },
       "error": null
     },
     "AI insight generation": {
       "success": true,
       "response_data": {
-        "insight_length": 224
+        "insight_length": 239
+      },
+      "error": null
+    },
+    "Share report generation": {
+      "success": true,
+      "response_data": {
+        "report_id": "723d8567",
+        "share_text_length": 222
+      },
+      "error": null
+    },
+    "Share text format with emojis/hashtags": {
+      "success": true,
+      "response_data": {
+        "contains_emojis_and_hashtags": true
+      },
+      "error": null
+    },
+    "Share report retrieval": {
+      "success": true,
+      "response_data": {
+        "report_id": "723d8567"
+      },
+      "error": null
+    },
+    "Notification subscriptions (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
+      },
+      "error": null
+    },
+    "Notification subscribe (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
+      },
+      "error": null
+    },
+    "Notification alerts (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
       },
       "error": null
     },
