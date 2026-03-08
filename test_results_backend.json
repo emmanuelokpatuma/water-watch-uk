@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-03-08T07:44:03.728232",
+  "backend_url": "https://water-watch-uk.preview.emergentagent.com",
+  "summary": {
+    "tests_run": 13,
+    "tests_passed": 13,
+    "success_rate": 100.0
+  },
+  "failed_tests": [],
+  "detailed_results": {
+    "Root endpoint structure": {
+      "success": true,
+      "response_data": {
+        "message": "UK Water Safety Map API",
+        "version": "1.0.0"
+      },
+      "error": null
+    },
+    "Health endpoint": {
+      "success": true,
+      "response_data": {
+        "status": "healthy",
+        "timestamp": "2026-03-08T07:43:58.085092+00:00"
+      },
+      "error": null
+    },
+    "Stations data retrieval": {
+      "success": true,
+      "response_data": {
+        "count": 100
+      },
+      "error": null
+    },
+    "Station data structure": {
+      "success": true,
+      "response_data": {
+        "sample_station": {
+          "station_id": "1029TH",
+          "label": "Bourton Dickler",
+          "river_name": "River Dikler",
+          "town": "Little Rissington",
+          "latitude": 51.874767,
+          "longitude": -1.740083,
+          "status": "http://environment.data.gov.uk/flood-monitoring/def/core/statusActive",
+          "safety_score": 6,
+          "pollution_risk": "Low",
+          "flood_risk": "None",
+          "water_level_unit": "mASD"
+        }
+      },
+      "error": null
+    },
+    "Sufficient stations count": {
+      "success": true,
+      "response_data": {
+        "count": 100
+      },
+      "error": null
+    },
+    "Flood warnings retrieval": {
+      "success": true,
+      "response_data": {
+        "warnings_count": 50
+      },
+      "error": null
+    },
+    "Flood warning structure": {
+      "success": true,
+      "response_data": {
+        "sample_warning": {
+          "id": "http://environment.data.gov.uk/flood-monitoring/id/floods/053WAF119MNK",
+          "description": "Minor Watercourses from Heighington to Dunston",
+          "severity": 3,
+          "severity_label": "Flood alert",
+          "message": "River levels remain high following recent rainfall. Flooding is possible on the 7 March 2026.\u00a0Locations most affected will be low lying land and roads near rivers. Our forecasts indicate that flooding to properties isn't likely and therefore flood warnings are not expected to be issued. We are closely monitoring the situation.\u00a0 Take care and avoid walking, cycling or driving through flood water. Avoid low lying roads, near rivers which may be flooded. This message will be updated by 5pm on 8 March 2026 or as the situation changes.\n",
+          "area": "",
+          "time_raised": "2026-03-07T15:09:16"
+        }
+      },
+      "error": null
+    },
+    "Postcode search": {
+      "success": true,
+      "response_data": {
+        "results_count": 1
+      },
+      "error": null
+    },
+    "Search result structure": {
+      "success": true,
+      "response_data": {
+        "sample_result": {
+          "type": "postcode",
+          "name": "SW1A 1AA",
+          "display_name": "SW1A 1AA, Westminster",
+          "latitude": 51.50101,
+          "longitude": -0.141563,
+          "region": "London"
+        }
+      },
+      "error": null
+    },
+    "Place name search": {
+      "success": true,
+      "response_data": {
+        "results_count": 0
+      },
+      "error": null
+    },
+    "AI insight generation": {
+      "success": true,
+      "response_data": {
+        "insight_length": 224
+      },
+      "error": null
+    },
+    "Auth me (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
+      },
+      "error": null
+    },
+    "Favorites (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
+      },
+      "error": null
+    }
+  }
+}
