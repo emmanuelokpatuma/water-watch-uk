@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../context/AuthContext';
@@ -31,7 +31,18 @@ import {
   Facebook,
   Copy,
   Check,
-  Umbrella
+  Umbrella,
+  Cloud,
+  Wind,
+  Thermometer,
+  AlertOctagon,
+  MessageSquare,
+  Star,
+  Send,
+  Eye,
+  Sun,
+  CloudRain,
+  Users
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -39,6 +50,7 @@ import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Switch } from '../components/ui/switch';
+import { Textarea } from '../components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,6 +88,10 @@ const createCustomIcon = (safetyScore, hasAlert = false, type = 'station') => {
     borderColor = '#fbbf24';
     glowColor = 'rgba(251, 191, 36, 0.4)';
     iconSvg = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>';
+  } else if (type === 'sewage') {
+    borderColor = hasAlert ? '#ef4444' : '#a855f7';
+    glowColor = hasAlert ? 'rgba(239, 68, 68, 0.6)' : 'rgba(168, 85, 247, 0.4)';
+    iconSvg = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>';
   } else if (hasAlert) {
     borderColor = '#ef4444';
     glowColor = 'rgba(239, 68, 68, 0.5)';
@@ -266,6 +282,14 @@ export default function Dashboard() {
   const [copied, setCopied] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [activeTab, setActiveTab] = useState('info');
+  const [weatherData, setWeatherData] = useState(null);
+  const [loadingWeather, setLoadingWeather] = useState(false);
+  const [sewageIncidents, setSewageIncidents] = useState([]);
+  const [showSewageLayer, setShowSewageLayer] = useState(true);
+  const [communityReports, setCommunityReports] = useState([]);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [newReport, setNewReport] = useState({ description: '', rating: 3, report_type: 'observation' });
+  const [sidebarTab, setSidebarTab] = useState('stations');
   const searchTimeoutRef = useRef(null);
 
   // Default center: UK
@@ -386,11 +410,89 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  // Fetch sewage incidents
+  const fetchSewageIncidents = useCallback(async () => {
+    try {
+      const response = await fetch(`${API}/sewage-incidents`);
+      if (response.ok) {
+        const data = await response.json();
+        setSewageIncidents(data.incidents || []);
+      }
+    } catch (error) {
+      console.error('Error fetching sewage incidents:', error);
+    }
+  }, []);
+
+  // Fetch weather for location
+  const fetchWeather = useCallback(async (lat, lng) => {
+    setLoadingWeather(true);
+    try {
+      const response = await fetch(`${API}/weather?lat=${lat}&lng=${lng}`);
+      if (response.ok) {
+        const data = await response.json();
+        setWeatherData(data);
+      }
+    } catch (error) {
+      console.error('Error fetching weather:', error);
+      setWeatherData(null);
+    } finally {
+      setLoadingWeather(false);
+    }
+  }, []);
+
+  // Fetch community reports
+  const fetchCommunityReports = useCallback(async () => {
+    try {
+      const response = await fetch(`${API}/community/reports`);
+      if (response.ok) {
+        const data = await response.json();
+        setCommunityReports(data.reports || []);
+      }
+    } catch (error) {
+      console.error('Error fetching community reports:', error);
+    }
+  }, []);
+
+  // Submit community report
+  const submitCommunityReport = async () => {
+    if (!user) {
+      toast.error('Please sign in to submit a report');
+      return;
+    }
+    if (!selectedStation) {
+      toast.error('Please select a location first');
+      return;
+    }
+    try {
+      const response = await fetch(`${API}/community/reports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          latitude: selectedStation.latitude,
+          longitude: selectedStation.longitude,
+          location_name: selectedStation.label,
+          ...newReport
+        })
+      });
+      if (response.ok) {
+        toast.success('Report submitted for review!');
+        setReportDialogOpen(false);
+        setNewReport({ description: '', rating: 3, report_type: 'observation' });
+        fetchCommunityReports();
+      }
+    } catch (error) {
+      toast.error('Failed to submit report');
+    }
+  };
+
   useEffect(() => {
     fetchStations();
     fetchBathingWaters();
     fetchFloodWarnings();
-  }, [fetchStations, fetchBathingWaters, fetchFloodWarnings]);
+    fetchSewageIncidents();
+    fetchCommunityReports();
+  }, [fetchStations, fetchBathingWaters, fetchFloodWarnings, fetchSewageIncidents, fetchCommunityReports]);
 
   useEffect(() => {
     fetchFavorites();
@@ -593,6 +695,7 @@ export default function Dashboard() {
     setActiveTab('info');
     getAiInsight(station);
     fetchHistory(station.station_id);
+    fetchWeather(station.latitude, station.longitude);
   };
 
   // Check if station is favorited
@@ -648,8 +751,36 @@ export default function Dashboard() {
       </Marker>
     ));
 
-    return [...stationMarkers, ...beachMarkers];
-  }, [stations, bathingWaters]);
+    const sewageMarkers = showSewageLayer ? sewageIncidents.filter(i => i.latitude && i.longitude).map((incident) => (
+      <Marker
+        key={incident.id}
+        position={[incident.latitude, incident.longitude]}
+        icon={createCustomIcon(0, incident.status === 'Discharging', 'sewage')}
+      >
+        <Popup>
+          <div className="min-w-[200px]">
+            <h3 className="font-semibold text-base mb-1">{incident.site_name}</h3>
+            <p className="text-slate-400 text-sm">{incident.water_company}</p>
+            <Badge 
+              variant="outline" 
+              className={`mt-2 ${
+                incident.status === 'Discharging' 
+                  ? 'border-red-500 text-red-400 animate-pulse' 
+                  : 'border-emerald-500 text-emerald-400'
+              }`}
+            >
+              {incident.status}
+            </Badge>
+            {incident.duration_hours && (
+              <p className="text-slate-500 text-xs mt-1">Duration: {incident.duration_hours}h</p>
+            )}
+          </div>
+        </Popup>
+      </Marker>
+    )) : [];
+
+    return [...stationMarkers, ...beachMarkers, ...sewageMarkers];
+  }, [stations, bathingWaters, sewageIncidents, showSewageLayer]);
 
   return (
     <div className="h-screen w-screen bg-slate-950 overflow-hidden flex flex-col md:flex-row" data-testid="dashboard">
@@ -784,6 +915,50 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* Sewage Incidents */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <AlertOctagon className="w-4 h-4 text-purple-400" />
+                  Sewage Alerts ({sewageIncidents.filter(i => i.status === 'Discharging').length})
+                </h3>
+                <Switch
+                  checked={showSewageLayer}
+                  onCheckedChange={setShowSewageLayer}
+                  data-testid="sewage-layer-toggle"
+                />
+              </div>
+              {sewageIncidents.filter(i => i.status === 'Discharging').length > 0 ? (
+                <div className="space-y-2">
+                  {sewageIncidents.filter(i => i.status === 'Discharging').map((incident) => (
+                    <button
+                      key={incident.id}
+                      onClick={() => incident.latitude && setMapCenter([incident.latitude, incident.longitude])}
+                      className="w-full p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-left transition-colors hover:bg-red-500/20"
+                      data-testid={`sewage-${incident.id}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-red-400 text-sm font-medium">{incident.site_name}</div>
+                          <div className="text-slate-500 text-xs">{incident.water_company}</div>
+                        </div>
+                        <Badge variant="outline" className="border-red-500 text-red-400 animate-pulse">
+                          Active
+                        </Badge>
+                      </div>
+                      {incident.duration_hours && (
+                        <div className="text-slate-500 text-xs mt-1">Duration: {incident.duration_hours}h</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                  <div className="text-emerald-400 text-sm">No active discharges</div>
+                </div>
+              )}
+            </div>
 
             {/* Bathing Waters */}
             {bathingWaters.length > 0 && (
@@ -1026,6 +1201,9 @@ export default function Dashboard() {
                 <TabsTrigger value="info" className="flex-1 data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
                   Info
                 </TabsTrigger>
+                <TabsTrigger value="weather" className="flex-1 data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
+                  Weather
+                </TabsTrigger>
                 <TabsTrigger value="history" className="flex-1 data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
                   History
                 </TabsTrigger>
@@ -1122,6 +1300,103 @@ export default function Dashboard() {
                     Directions
                   </Button>
                 </div>
+
+                {/* Community Report Button */}
+                {user && (
+                  <Button
+                    variant="outline"
+                    className="w-full border-slate-700 text-slate-300 hover:text-white mt-2"
+                    onClick={() => setReportDialogOpen(true)}
+                    data-testid="submit-report-btn"
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Submit Community Report
+                  </Button>
+                )}
+              </TabsContent>
+
+              <TabsContent value="weather" className="p-4 mt-0 space-y-4">
+                {loadingWeather ? (
+                  <div className="h-32 flex items-center justify-center">
+                    <RefreshCw className="w-5 h-5 text-cyan-400 animate-spin" />
+                  </div>
+                ) : weatherData?.weather ? (
+                  <>
+                    {/* Current Weather */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-4xl">{weatherData.weather.weather_icon}</span>
+                        <div>
+                          <div className="text-2xl font-bold text-white font-mono">
+                            {Math.round(weatherData.weather.temperature)}°C
+                          </div>
+                          <div className="text-slate-400 text-sm">
+                            {weatherData.weather.weather_description}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-slate-400 text-xs">Feels like</div>
+                        <div className="text-white font-mono">
+                          {Math.round(weatherData.weather.feels_like)}°C
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Weather Stats */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-2 rounded-lg bg-slate-800/50 text-center">
+                        <Wind className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
+                        <div className="text-white text-sm font-mono">{Math.round(weatherData.weather.wind_speed)}</div>
+                        <div className="text-slate-500 text-xs">km/h</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-slate-800/50 text-center">
+                        <Droplets className="w-4 h-4 text-cyan-400 mx-auto mb-1" />
+                        <div className="text-white text-sm font-mono">{weatherData.weather.humidity}%</div>
+                        <div className="text-slate-500 text-xs">Humidity</div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-slate-800/50 text-center">
+                        <Sun className="w-4 h-4 text-yellow-400 mx-auto mb-1" />
+                        <div className="text-white text-sm font-mono">{weatherData.weather.uv_index}</div>
+                        <div className="text-slate-500 text-xs">UV Index</div>
+                      </div>
+                    </div>
+
+                    {/* Activity Recommendation */}
+                    <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Activity className="w-4 h-4 text-cyan-400" />
+                        <span className="text-cyan-400 text-sm font-medium">Activity Tip</span>
+                      </div>
+                      <p className="text-slate-300 text-sm">{weatherData.recommendation}</p>
+                    </div>
+
+                    {/* 3-Day Forecast */}
+                    {weatherData.forecast?.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-400 mb-2">3-Day Forecast</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {weatherData.forecast.map((day, index) => (
+                            <div key={index} className="p-2 rounded-lg bg-slate-800/50 text-center">
+                              <div className="text-slate-500 text-xs">
+                                {index === 0 ? 'Today' : new Date(day.date).toLocaleDateString('en-GB', { weekday: 'short' })}
+                              </div>
+                              <div className="text-xl my-1">{day.weather_icon}</div>
+                              <div className="text-white text-xs font-mono">
+                                {Math.round(day.temp_max)}° / {Math.round(day.temp_min)}°
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center text-slate-500 py-8">
+                    <Cloud className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p>Weather data unavailable</p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="history" className="p-4 mt-0">
@@ -1138,6 +1413,85 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Community Report Dialog */}
+      <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-cyan-400" />
+              Submit Community Report
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Share your observations about water conditions at {selectedStation?.label}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm text-slate-400 mb-2 block">Report Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'observation', label: 'General', icon: Eye },
+                  { value: 'pollution', label: 'Pollution', icon: AlertTriangle },
+                  { value: 'wildlife', label: 'Wildlife', icon: Activity },
+                  { value: 'safety', label: 'Safety', icon: ShieldCheck }
+                ].map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setNewReport({ ...newReport, report_type: value })}
+                    className={`p-2 rounded-lg border flex items-center gap-2 transition-colors ${
+                      newReport.report_type === value 
+                        ? 'border-cyan-500 bg-cyan-500/10 text-cyan-400' 
+                        : 'border-slate-700 text-slate-400 hover:border-slate-600'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="text-sm">{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-slate-400 mb-2 block">Rating</label>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setNewReport({ ...newReport, rating: star })}
+                    className="p-1"
+                  >
+                    <Star className={`w-6 h-6 ${
+                      star <= newReport.rating ? 'text-yellow-400 fill-yellow-400' : 'text-slate-600'
+                    }`} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm text-slate-400 mb-2 block">Description</label>
+              <Textarea
+                value={newReport.description}
+                onChange={(e) => setNewReport({ ...newReport, description: e.target.value })}
+                placeholder="Describe current water conditions..."
+                className="bg-slate-800 border-slate-700 text-white"
+                rows={3}
+              />
+            </div>
+
+            <Button
+              onClick={submitCommunityReport}
+              className="w-full bg-cyan-500 hover:bg-cyan-400 text-black"
+              disabled={!newReport.description}
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Submit Report
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Share Dialog */}
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>

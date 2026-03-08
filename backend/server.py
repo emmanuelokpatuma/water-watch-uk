@@ -111,6 +111,33 @@ class ShareReportRequest(BaseModel):
     flood_risk: str
     water_level: Optional[float] = None
 
+class WebPushSubscription(BaseModel):
+    endpoint: str
+    keys: dict
+
+class WeatherData(BaseModel):
+    temperature: float
+    feels_like: float
+    humidity: int
+    wind_speed: float
+    wind_direction: int
+    weather_code: int
+    weather_description: str
+    precipitation: float
+    uv_index: float
+
+class SewageIncident(BaseModel):
+    id: str
+    site_name: str
+    water_company: str
+    status: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    discharge_start: Optional[str] = None
+    discharge_stop: Optional[str] = None
+    duration_hours: Optional[float] = None
+    alert_past_48h: bool = False
+
 # ==================== AUTH HELPERS ====================
 
 async def get_current_user(request: Request) -> Optional[User]:
@@ -851,6 +878,355 @@ def get_mock_bathing_waters():
             "classification": "Excellent"
         }
     ]
+
+def get_weather_description(code: int) -> str:
+    """Convert WMO weather code to description"""
+    weather_codes = {
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Foggy",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        66: "Light freezing rain",
+        67: "Heavy freezing rain",
+        71: "Slight snow",
+        73: "Moderate snow",
+        75: "Heavy snow",
+        77: "Snow grains",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        85: "Slight snow showers",
+        86: "Heavy snow showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with slight hail",
+        99: "Thunderstorm with heavy hail"
+    }
+    return weather_codes.get(code, "Unknown")
+
+def get_weather_icon(code: int) -> str:
+    """Get weather icon emoji for WMO code"""
+    if code == 0:
+        return "☀️"
+    elif code in [1, 2]:
+        return "⛅"
+    elif code == 3:
+        return "☁️"
+    elif code in [45, 48]:
+        return "🌫️"
+    elif code in [51, 53, 55, 61, 63, 65, 80, 81, 82]:
+        return "🌧️"
+    elif code in [66, 67]:
+        return "🌨️"
+    elif code in [71, 73, 75, 77, 85, 86]:
+        return "❄️"
+    elif code in [95, 96, 99]:
+        return "⛈️"
+    return "🌤️"
+
+# ==================== WEATHER ENDPOINTS ====================
+
+@api_router.get("/weather")
+async def get_weather(lat: float, lng: float):
+    """Get current weather and forecast for a location using Open-Meteo API (free, no key needed)"""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client_http:
+            url = "https://api.open-meteo.com/v1/forecast"
+            params = {
+                "latitude": lat,
+                "longitude": lng,
+                "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index",
+                "hourly": "temperature_2m,precipitation_probability,weather_code",
+                "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,uv_index_max",
+                "timezone": "Europe/London",
+                "forecast_days": 3
+            }
+            
+            response = await client_http.get(url, params=params)
+            
+            if response.status_code != 200:
+                return {"weather": None, "forecast": []}
+            
+            data = response.json()
+            current = data.get("current", {})
+            
+            weather = {
+                "temperature": current.get("temperature_2m"),
+                "feels_like": current.get("apparent_temperature"),
+                "humidity": current.get("relative_humidity_2m"),
+                "wind_speed": current.get("wind_speed_10m"),
+                "wind_direction": current.get("wind_direction_10m"),
+                "weather_code": current.get("weather_code", 0),
+                "weather_description": get_weather_description(current.get("weather_code", 0)),
+                "weather_icon": get_weather_icon(current.get("weather_code", 0)),
+                "precipitation": current.get("precipitation", 0),
+                "uv_index": current.get("uv_index", 0)
+            }
+            
+            # Build daily forecast
+            daily = data.get("daily", {})
+            forecast = []
+            times = daily.get("time", [])
+            for i, date in enumerate(times[:3]):
+                forecast.append({
+                    "date": date,
+                    "weather_code": daily.get("weather_code", [])[i] if i < len(daily.get("weather_code", [])) else 0,
+                    "weather_icon": get_weather_icon(daily.get("weather_code", [])[i] if i < len(daily.get("weather_code", [])) else 0),
+                    "temp_max": daily.get("temperature_2m_max", [])[i] if i < len(daily.get("temperature_2m_max", [])) else None,
+                    "temp_min": daily.get("temperature_2m_min", [])[i] if i < len(daily.get("temperature_2m_min", [])) else None,
+                    "precipitation": daily.get("precipitation_sum", [])[i] if i < len(daily.get("precipitation_sum", [])) else 0,
+                    "uv_index": daily.get("uv_index_max", [])[i] if i < len(daily.get("uv_index_max", [])) else 0
+                })
+            
+            # Water activity recommendation based on weather
+            recommendation = "Good conditions for water activities"
+            if weather["precipitation"] > 5:
+                recommendation = "Heavy rain - check water levels before activities"
+            elif weather["wind_speed"] > 30:
+                recommendation = "Strong winds - caution for paddleboarding/kayaking"
+            elif weather["weather_code"] in [95, 96, 99]:
+                recommendation = "Thunderstorms - avoid all water activities"
+            elif weather["temperature"] < 10:
+                recommendation = "Cold conditions - wetsuit recommended"
+            elif weather["uv_index"] > 6:
+                recommendation = "High UV - remember sun protection"
+            
+            return {
+                "weather": weather,
+                "forecast": forecast,
+                "recommendation": recommendation
+            }
+    except Exception as e:
+        logger.error(f"Weather API error: {e}")
+        return {"weather": None, "forecast": [], "recommendation": "Weather data unavailable"}
+
+# ==================== SEWAGE INCIDENTS ====================
+
+@api_router.get("/sewage-incidents")
+async def get_sewage_incidents():
+    """Get sewage discharge incidents from water companies"""
+    # Since Thames Water API requires registration, we'll use a combination of
+    # cached data and mock data to demonstrate the feature
+    
+    # In production, you would register at https://data.thameswater.co.uk/
+    # and use the EDM (Event Duration Monitoring) API
+    
+    incidents = []
+    
+    try:
+        # Try to fetch from our cached incidents collection
+        cached = await db.sewage_incidents.find(
+            {"created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()}},
+            {"_id": 0}
+        ).to_list(100)
+        
+        if cached:
+            incidents = cached
+        else:
+            # Return sample data to demonstrate the feature
+            incidents = get_mock_sewage_incidents()
+            
+    except Exception as e:
+        logger.error(f"Error fetching sewage incidents: {e}")
+        incidents = get_mock_sewage_incidents()
+    
+    # Calculate summary stats
+    discharging_count = len([i for i in incidents if i.get("status") == "Discharging"])
+    recent_count = len([i for i in incidents if i.get("alert_past_48h")])
+    
+    return {
+        "incidents": incidents,
+        "summary": {
+            "total": len(incidents),
+            "currently_discharging": discharging_count,
+            "past_48h": recent_count
+        }
+    }
+
+@api_router.get("/sewage-incidents/near")
+async def get_nearby_sewage_incidents(lat: float, lng: float, radius_km: float = 20):
+    """Get sewage incidents near a location"""
+    incidents = get_mock_sewage_incidents()
+    
+    nearby = []
+    for incident in incidents:
+        if incident.get("latitude") and incident.get("longitude"):
+            # Simple distance calculation (approximate)
+            dlat = abs(incident["latitude"] - lat) * 111  # km per degree lat
+            dlng = abs(incident["longitude"] - lng) * 111 * 0.7  # approximate for UK latitude
+            distance = (dlat**2 + dlng**2) ** 0.5
+            
+            if distance <= radius_km:
+                incident["distance_km"] = round(distance, 1)
+                nearby.append(incident)
+    
+    # Sort by distance
+    nearby.sort(key=lambda x: x.get("distance_km", 999))
+    
+    return {"incidents": nearby[:10]}
+
+def get_mock_sewage_incidents():
+    """Return sample sewage incidents for demonstration"""
+    return [
+        {
+            "id": "tw_001",
+            "site_name": "Beckton STW",
+            "water_company": "Thames Water",
+            "status": "Not Discharging",
+            "latitude": 51.5116,
+            "longitude": 0.0775,
+            "discharge_start": None,
+            "discharge_stop": None,
+            "duration_hours": None,
+            "alert_past_48h": False
+        },
+        {
+            "id": "tw_002",
+            "site_name": "Mogden STW",
+            "water_company": "Thames Water",
+            "status": "Discharging",
+            "latitude": 51.4723,
+            "longitude": -0.3382,
+            "discharge_start": (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),
+            "discharge_stop": None,
+            "duration_hours": 3.0,
+            "alert_past_48h": True
+        },
+        {
+            "id": "yw_001",
+            "site_name": "Knostrop WWTW",
+            "water_company": "Yorkshire Water",
+            "status": "Not Discharging",
+            "latitude": 53.7753,
+            "longitude": -1.5047,
+            "discharge_start": (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat(),
+            "discharge_stop": (datetime.now(timezone.utc) - timedelta(hours=26)).isoformat(),
+            "duration_hours": 4.0,
+            "alert_past_48h": True
+        },
+        {
+            "id": "uu_001",
+            "site_name": "Davyhulme WWTW",
+            "water_company": "United Utilities",
+            "status": "Discharging",
+            "latitude": 53.4622,
+            "longitude": -2.3744,
+            "discharge_start": (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat(),
+            "discharge_stop": None,
+            "duration_hours": 6.0,
+            "alert_past_48h": True
+        },
+        {
+            "id": "sw_001",
+            "site_name": "Countess Wear STW",
+            "water_company": "South West Water",
+            "status": "Not Discharging",
+            "latitude": 50.7050,
+            "longitude": -3.4892,
+            "discharge_start": None,
+            "discharge_stop": None,
+            "duration_hours": None,
+            "alert_past_48h": False
+        }
+    ]
+
+# ==================== WEBPUSH NOTIFICATIONS ====================
+
+@api_router.post("/push/subscribe")
+async def subscribe_to_push(subscription: WebPushSubscription, user: User = Depends(require_auth)):
+    """Subscribe to WebPush notifications"""
+    sub_doc = {
+        "user_id": user.user_id,
+        "endpoint": subscription.endpoint,
+        "keys": subscription.keys,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # Upsert subscription
+    await db.push_subscriptions.update_one(
+        {"user_id": user.user_id},
+        {"$set": sub_doc},
+        upsert=True
+    )
+    
+    return {"message": "Subscribed to push notifications"}
+
+@api_router.delete("/push/unsubscribe")
+async def unsubscribe_from_push(user: User = Depends(require_auth)):
+    """Unsubscribe from WebPush notifications"""
+    await db.push_subscriptions.delete_many({"user_id": user.user_id})
+    return {"message": "Unsubscribed from push notifications"}
+
+@api_router.get("/push/vapid-key")
+async def get_vapid_public_key():
+    """Get VAPID public key for WebPush subscription"""
+    # For production, generate real VAPID keys using:
+    # openssl ecparam -genkey -name prime256v1 -out private_key.pem
+    # openssl ec -in private_key.pem -pubout -outform DER | tail -c 65 | base64 | tr '/+' '_-' | tr -d '='
+    
+    # Demo public key - replace with real key in production
+    public_key = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U"
+    
+    return {"public_key": public_key}
+
+# ==================== COMMUNITY REPORTS ====================
+
+@api_router.get("/community/reports")
+async def get_community_reports(lat: Optional[float] = None, lng: Optional[float] = None, radius_km: float = 10):
+    """Get community-submitted water quality reports"""
+    query = {"status": "approved"}
+    
+    reports = await db.community_reports.find(
+        query,
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    
+    # Filter by location if provided
+    if lat and lng:
+        nearby_reports = []
+        for report in reports:
+            if report.get("latitude") and report.get("longitude"):
+                dlat = abs(report["latitude"] - lat) * 111
+                dlng = abs(report["longitude"] - lng) * 111 * 0.7
+                distance = (dlat**2 + dlng**2) ** 0.5
+                if distance <= radius_km:
+                    report["distance_km"] = round(distance, 1)
+                    nearby_reports.append(report)
+        reports = nearby_reports
+    
+    return {"reports": reports}
+
+@api_router.post("/community/reports")
+async def submit_community_report(request: Request, user: User = Depends(require_auth)):
+    """Submit a community water quality report"""
+    body = await request.json()
+    
+    report_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.user_id,
+        "user_name": user.name,
+        "latitude": body.get("latitude"),
+        "longitude": body.get("longitude"),
+        "location_name": body.get("location_name", "Unknown"),
+        "report_type": body.get("report_type", "observation"),  # observation, pollution, wildlife, safety
+        "description": body.get("description", ""),
+        "rating": body.get("rating", 3),  # 1-5 stars
+        "photos": body.get("photos", []),
+        "status": "pending",  # pending, approved, rejected
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.community_reports.insert_one(report_doc)
+    report_doc.pop("_id", None)
+    
+    return {"message": "Report submitted for review", "report": report_doc}
 
 # ==================== ROOT ENDPOINT ====================
 

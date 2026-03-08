@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-03-08T07:56:23.552471",
+  "timestamp": "2026-03-08T08:08:42.011217",
   "backend_url": "https://water-watch-uk.preview.emergentagent.com",
   "summary": {
-    "tests_run": 26,
-    "tests_passed": 26,
+    "tests_run": 44,
+    "tests_passed": 44,
     "success_rate": 100.0
   },
   "failed_tests": [],
@@ -20,7 +20,7 @@
       "success": true,
       "response_data": {
         "status": "healthy",
-        "timestamp": "2026-03-08T07:56:18.354390+00:00"
+        "timestamp": "2026-03-08T08:08:29.984248+00:00"
       },
       "error": null
     },
@@ -42,7 +42,7 @@
           "latitude": 51.874767,
           "longitude": -1.740083,
           "status": "http://environment.data.gov.uk/flood-monitoring/def/core/statusActive",
-          "safety_score": 9,
+          "safety_score": 8,
           "pollution_risk": "Low",
           "flood_risk": "None",
           "water_level_unit": "mASD"
@@ -81,8 +81,8 @@
       "success": true,
       "response_data": {
         "classifications": [
-          "Good",
-          "Excellent"
+          "Excellent",
+          "Good"
         ]
       },
       "error": null
@@ -125,7 +125,7 @@
           "min": 0.05,
           "max": 0.36,
           "avg": 0.21,
-          "latest": 0.058,
+          "latest": 0.057,
           "trend": "falling"
         }
       },
@@ -142,9 +142,177 @@
       "success": true,
       "response_data": {
         "sample_reading": {
-          "datetime": "2026-03-08T07:15:00Z",
-          "value": 0.058
+          "datetime": "2026-03-08T07:30:00Z",
+          "value": 0.057
         }
+      },
+      "error": null
+    },
+    "Current weather data structure": {
+      "success": true,
+      "response_data": {
+        "weather_sample": {
+          "temperature": 7.5,
+          "feels_like": 5.6,
+          "humidity": 98,
+          "wind_speed": 8.3,
+          "wind_direction": 74,
+          "weather_code": 3,
+          "weather_description": "Overcast",
+          "weather_icon": "\u2601\ufe0f",
+          "precipitation": 0.0,
+          "uv_index": 0.0
+        }
+      },
+      "error": null
+    },
+    "Valid temperature range": {
+      "success": true,
+      "response_data": {
+        "temperature": 7.5
+      },
+      "error": null
+    },
+    "Valid humidity range": {
+      "success": true,
+      "response_data": {
+        "humidity": 98
+      },
+      "error": null
+    },
+    "3-day forecast availability": {
+      "success": true,
+      "response_data": {
+        "forecast_days": 3
+      },
+      "error": null
+    },
+    "Forecast data structure": {
+      "success": true,
+      "response_data": {
+        "forecast_sample": {
+          "date": "2026-03-08",
+          "weather_code": 3,
+          "weather_icon": "\u2601\ufe0f",
+          "temp_max": 11.5,
+          "temp_min": 7.5,
+          "precipitation": 0.0,
+          "uv_index": 1.0
+        }
+      },
+      "error": null
+    },
+    "Activity recommendation": {
+      "success": true,
+      "response_data": {
+        "recommendation_length": 37
+      },
+      "error": null
+    },
+    "Sewage incidents data retrieval": {
+      "success": true,
+      "response_data": {
+        "count": 5
+      },
+      "error": null
+    },
+    "Sewage incident data structure": {
+      "success": true,
+      "response_data": {
+        "sample_incident": {
+          "id": "tw_001",
+          "site_name": "Beckton STW",
+          "water_company": "Thames Water",
+          "status": "Not Discharging",
+          "latitude": 51.5116,
+          "longitude": 0.0775,
+          "discharge_start": null,
+          "discharge_stop": null,
+          "duration_hours": null,
+          "alert_past_48h": false
+        }
+      },
+      "error": null
+    },
+    "Valid water company names": {
+      "success": true,
+      "response_data": {
+        "companies": [
+          "Yorkshire Water",
+          "South West Water",
+          "Thames Water",
+          "United Utilities"
+        ]
+      },
+      "error": null
+    },
+    "Valid discharge statuses": {
+      "success": true,
+      "response_data": {
+        "statuses": [
+          "Discharging",
+          "Not Discharging"
+        ]
+      },
+      "error": null
+    },
+    "Sewage incidents summary": {
+      "success": true,
+      "response_data": {
+        "summary": {
+          "total": 5,
+          "currently_discharging": 2,
+          "past_48h": 3
+        }
+      },
+      "error": null
+    },
+    "Nearby sewage incidents": {
+      "success": true,
+      "response_data": {
+        "nearby_count": 2
+      },
+      "error": null
+    },
+    "Sewage incidents distance calculation": {
+      "success": true,
+      "response_data": {
+        "distance": 16.0
+      },
+      "error": null
+    },
+    "Community reports retrieval": {
+      "success": true,
+      "response_data": {
+        "count": 0
+      },
+      "error": null
+    },
+    "Community report submission (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
+      },
+      "error": null
+    },
+    "VAPID public key endpoint": {
+      "success": true,
+      "response_data": {
+        "key_length": 87
+      },
+      "error": null
+    },
+    "Push subscription (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
+      },
+      "error": null
+    },
+    "Push unsubscription (unauthenticated)": {
+      "success": true,
+      "response_data": {
+        "expected_401": true
       },
       "error": null
     },
@@ -179,14 +347,14 @@
     "AI insight generation": {
       "success": true,
       "response_data": {
-        "insight_length": 239
+        "insight_length": 194
       },
       "error": null
     },
     "Share report generation": {
       "success": true,
       "response_data": {
-        "report_id": "723d8567",
+        "report_id": "6e042ec8",
         "share_text_length": 222
       },
       "error": null
@@ -201,7 +369,7 @@
     "Share report retrieval": {
       "success": true,
       "response_data": {
-        "report_id": "723d8567"
+        "report_id": "6e042ec8"
       },
       "error": null
     },

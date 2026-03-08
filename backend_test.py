@@ -417,6 +417,270 @@ class WaterSafetyAPITester:
         except Exception as e:
             self.log_test_result("Notification alerts endpoint", False, error_msg=str(e))
 
+    def test_weather_endpoint(self):
+        """Test weather API endpoint - NEW FEATURE"""
+        print("\n🔍 Testing Weather Endpoint...")
+        
+        # Test weather data for London coordinates
+        test_lat, test_lng = 51.5074, -0.1278
+        
+        try:
+            response = self.session.get(f"{API_BASE}/weather", params={"lat": test_lat, "lng": test_lng})
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                weather = data.get("weather")
+                forecast = data.get("forecast", [])
+                recommendation = data.get("recommendation", "")
+                
+                if weather:
+                    # Check current weather structure
+                    required_weather_fields = ["temperature", "feels_like", "humidity", "wind_speed", "weather_description", "uv_index"]
+                    if all(field in weather for field in required_weather_fields):
+                        self.log_test_result("Current weather data structure", True, {"weather_sample": weather})
+                        
+                        # Check temperature is reasonable (between -50 and 50 Celsius)
+                        temp = weather.get("temperature")
+                        if temp and -50 <= temp <= 50:
+                            self.log_test_result("Valid temperature range", True, {"temperature": temp})
+                        else:
+                            self.log_test_result("Valid temperature range", False, error_msg=f"Temperature {temp}°C out of range")
+                        
+                        # Check humidity is percentage (0-100)
+                        humidity = weather.get("humidity")
+                        if humidity and 0 <= humidity <= 100:
+                            self.log_test_result("Valid humidity range", True, {"humidity": humidity})
+                        else:
+                            self.log_test_result("Valid humidity range", False, error_msg=f"Humidity {humidity}% out of range")
+                    else:
+                        missing = [f for f in required_weather_fields if f not in weather]
+                        self.log_test_result("Current weather data structure", False, error_msg=f"Missing fields: {missing}")
+                else:
+                    self.log_test_result("Current weather data", False, error_msg="No weather data returned")
+                
+                # Check 3-day forecast
+                if len(forecast) >= 3:
+                    self.log_test_result("3-day forecast availability", True, {"forecast_days": len(forecast)})
+                    
+                    first_day = forecast[0]
+                    required_forecast_fields = ["date", "temp_max", "temp_min", "weather_icon"]
+                    if all(field in first_day for field in required_forecast_fields):
+                        self.log_test_result("Forecast data structure", True, {"forecast_sample": first_day})
+                    else:
+                        missing = [f for f in required_forecast_fields if f not in first_day]
+                        self.log_test_result("Forecast data structure", False, error_msg=f"Missing fields: {missing}")
+                else:
+                    self.log_test_result("3-day forecast availability", False, error_msg=f"Only {len(forecast)} forecast days available")
+                
+                # Check activity recommendation exists
+                if recommendation and len(recommendation) > 10:
+                    self.log_test_result("Activity recommendation", True, {"recommendation_length": len(recommendation)})
+                else:
+                    self.log_test_result("Activity recommendation", False, error_msg="No or too short recommendation")
+                    
+            else:
+                self.log_test_result("Weather endpoint", False, error_msg=f"Status {response.status_code}")
+                
+        except Exception as e:
+            self.log_test_result("Weather endpoint", False, error_msg=str(e))
+
+    def test_sewage_incidents_endpoint(self):
+        """Test sewage incidents API endpoint - NEW FEATURE"""
+        print("\n🔍 Testing Sewage Incidents Endpoint...")
+        
+        try:
+            response = self.session.get(f"{API_BASE}/sewage-incidents")
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                incidents = data.get("incidents", [])
+                summary = data.get("summary", {})
+                
+                # Check we have incidents data (mock data)
+                if len(incidents) > 0:
+                    self.log_test_result("Sewage incidents data retrieval", True, {"count": len(incidents)})
+                    
+                    # Check first incident structure
+                    first_incident = incidents[0]
+                    required_fields = ["id", "site_name", "water_company", "status"]
+                    
+                    if all(field in first_incident for field in required_fields):
+                        self.log_test_result("Sewage incident data structure", True, {"sample_incident": first_incident})
+                        
+                        # Check water company names are from expected companies
+                        companies = [inc.get("water_company") for inc in incidents]
+                        expected_companies = ["Thames Water", "Yorkshire Water", "United Utilities", "South West Water"]
+                        if any(company in expected_companies for company in companies):
+                            self.log_test_result("Valid water company names", True, {"companies": list(set(companies))})
+                        else:
+                            self.log_test_result("Valid water company names", False, error_msg=f"Unexpected companies: {companies}")
+                        
+                        # Check status values are valid
+                        statuses = [inc.get("status") for inc in incidents]
+                        valid_statuses = ["Discharging", "Not Discharging"]
+                        if all(status in valid_statuses for status in statuses):
+                            self.log_test_result("Valid discharge statuses", True, {"statuses": list(set(statuses))})
+                        else:
+                            self.log_test_result("Valid discharge statuses", False, error_msg=f"Invalid statuses: {statuses}")
+                    else:
+                        missing = [f for f in required_fields if f not in first_incident]
+                        self.log_test_result("Sewage incident data structure", False, error_msg=f"Missing fields: {missing}")
+                else:
+                    self.log_test_result("Sewage incidents data retrieval", False, error_msg="No incidents returned")
+                
+                # Check summary structure
+                if summary:
+                    summary_fields = ["total", "currently_discharging", "past_48h"]
+                    if all(field in summary for field in summary_fields):
+                        self.log_test_result("Sewage incidents summary", True, {"summary": summary})
+                    else:
+                        missing = [f for f in summary_fields if f not in summary]
+                        self.log_test_result("Sewage incidents summary", False, error_msg=f"Missing summary fields: {missing}")
+                        
+            else:
+                self.log_test_result("Sewage incidents endpoint", False, error_msg=f"Status {response.status_code}")
+                
+        except Exception as e:
+            self.log_test_result("Sewage incidents endpoint", False, error_msg=str(e))
+
+        # Test nearby sewage incidents
+        try:
+            # Test near London coordinates
+            response = self.session.get(f"{API_BASE}/sewage-incidents/near", params={"lat": 51.5074, "lng": -0.1278, "radius_km": 50})
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                incidents = data.get("incidents", [])
+                self.log_test_result("Nearby sewage incidents", True, {"nearby_count": len(incidents)})
+                
+                # Check incidents have distance
+                if incidents:
+                    first_incident = incidents[0]
+                    if "distance_km" in first_incident:
+                        self.log_test_result("Sewage incidents distance calculation", True, {"distance": first_incident.get("distance_km")})
+                    else:
+                        self.log_test_result("Sewage incidents distance calculation", False, error_msg="No distance_km field")
+            else:
+                self.log_test_result("Nearby sewage incidents", False, error_msg=f"Status {response.status_code}")
+                
+        except Exception as e:
+            self.log_test_result("Nearby sewage incidents", False, error_msg=str(e))
+
+    def test_community_reports_endpoint(self):
+        """Test community reports API endpoint - NEW FEATURE"""
+        print("\n🔍 Testing Community Reports Endpoint...")
+        
+        # Test GET community reports (public endpoint)
+        try:
+            response = self.session.get(f"{API_BASE}/community/reports")
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                reports = data.get("reports", [])
+                self.log_test_result("Community reports retrieval", True, {"count": len(reports)})
+                
+                # If we have reports, check structure
+                if reports:
+                    first_report = reports[0]
+                    expected_fields = ["id", "user_name", "location_name", "report_type", "description", "rating"]
+                    if all(field in first_report for field in expected_fields):
+                        self.log_test_result("Community report structure", True, {"sample_report": first_report})
+                        
+                        # Check rating is valid (1-5)
+                        rating = first_report.get("rating")
+                        if rating and 1 <= rating <= 5:
+                            self.log_test_result("Valid community report rating", True, {"rating": rating})
+                        else:
+                            self.log_test_result("Valid community report rating", False, error_msg=f"Invalid rating: {rating}")
+                    else:
+                        missing = [f for f in expected_fields if f not in first_report]
+                        self.log_test_result("Community report structure", False, error_msg=f"Missing fields: {missing}")
+            else:
+                self.log_test_result("Community reports endpoint", False, error_msg=f"Status {response.status_code}")
+                
+        except Exception as e:
+            self.log_test_result("Community reports endpoint", False, error_msg=str(e))
+
+        # Test POST community report (should require authentication)
+        test_report = {
+            "latitude": 51.5074,
+            "longitude": -0.1278,
+            "location_name": "Test Location",
+            "report_type": "observation",
+            "description": "Test water quality observation",
+            "rating": 4
+        }
+        
+        try:
+            response = self.session.post(
+                f"{API_BASE}/community/reports",
+                json=test_report,
+                headers={"Content-Type": "application/json"}
+            )
+            if response.status_code == 401:
+                self.log_test_result("Community report submission (unauthenticated)", True, {"expected_401": True})
+            else:
+                self.log_test_result("Community report submission (unauthenticated)", False, error_msg=f"Expected 401, got {response.status_code}")
+        except Exception as e:
+            self.log_test_result("Community report submission", False, error_msg=str(e))
+
+    def test_webpush_endpoints(self):
+        """Test WebPush notification endpoints - NEW FEATURE"""
+        print("\n🔍 Testing WebPush Endpoints...")
+        
+        # Test VAPID public key endpoint (should be public)
+        try:
+            response = self.session.get(f"{API_BASE}/push/vapid-key")
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                if "public_key" in data and data["public_key"]:
+                    self.log_test_result("VAPID public key endpoint", True, {"key_length": len(data["public_key"])})
+                else:
+                    self.log_test_result("VAPID public key endpoint", False, error_msg="No public key returned")
+            else:
+                self.log_test_result("VAPID public key endpoint", False, error_msg=f"Status {response.status_code}")
+                
+        except Exception as e:
+            self.log_test_result("VAPID public key endpoint", False, error_msg=str(e))
+
+        # Test push subscription (should require authentication)
+        test_subscription = {
+            "endpoint": "https://fcm.googleapis.com/fcm/send/test",
+            "keys": {
+                "p256dh": "test_p256dh_key",
+                "auth": "test_auth_key"
+            }
+        }
+        
+        try:
+            response = self.session.post(
+                f"{API_BASE}/push/subscribe",
+                json=test_subscription,
+                headers={"Content-Type": "application/json"}
+            )
+            if response.status_code == 401:
+                self.log_test_result("Push subscription (unauthenticated)", True, {"expected_401": True})
+            else:
+                self.log_test_result("Push subscription (unauthenticated)", False, error_msg=f"Expected 401, got {response.status_code}")
+        except Exception as e:
+            self.log_test_result("Push subscription endpoint", False, error_msg=str(e))
+
+        # Test push unsubscription (should require authentication)
+        try:
+            response = self.session.delete(f"{API_BASE}/push/unsubscribe")
+            if response.status_code == 401:
+                self.log_test_result("Push unsubscription (unauthenticated)", True, {"expected_401": True})
+            else:
+                self.log_test_result("Push unsubscription (unauthenticated)", False, error_msg=f"Expected 401, got {response.status_code}")
+        except Exception as e:
+            self.log_test_result("Push unsubscription endpoint", False, error_msg=str(e))
+
     def test_auth_endpoints(self):
         """Test authentication endpoints (without actual login)"""
         print("\n🔍 Testing Auth Endpoints...")
@@ -453,6 +717,10 @@ class WaterSafetyAPITester:
         self.test_bathing_waters_endpoint()  # NEW
         self.test_flood_warnings_endpoint() 
         self.test_historical_data_endpoint()  # NEW
+        self.test_weather_endpoint()  # NEW - Weather API
+        self.test_sewage_incidents_endpoint()  # NEW - Sewage incidents
+        self.test_community_reports_endpoint()  # NEW - Community reports
+        self.test_webpush_endpoints()  # NEW - WebPush notifications
         self.test_search_endpoint()
         self.test_ai_insight_endpoint()
         self.test_share_report_endpoint()  # NEW
