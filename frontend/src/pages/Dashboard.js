@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../context/AuthContext';
+import { useSubscription } from '../context/SubscriptionContext';
+import { usePaywall } from '../components/SubscriptionPaywall';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   Search, 
@@ -44,7 +46,8 @@ import {
   Sun,
   CloudRain,
   Users,
-  Home
+  Home,
+  Crown
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -265,6 +268,8 @@ function HistoryChart({ data, summary }) {
 
 export default function Dashboard() {
   const { user, login, logout } = useAuth();
+  const { isProUser, hasAccess, canAddFavorite } = useSubscription();
+  const { requireFeature, PaywallDialog, openPaywall } = usePaywall();
   const { isSupported: pushSupported, isSubscribed: pushSubscribed, subscribe: subscribePush, unsubscribe: unsubscribePush, sendTestNotification } = usePushNotifications();
   const [stations, setStations] = useState([]);
   const [bathingWaters, setBathingWaters] = useState([]);
@@ -560,6 +565,13 @@ export default function Dashboard() {
         toast.error('Failed to remove favorite');
       }
     } else {
+      // Check favorites limit for free users
+      if (!canAddFavorite(favorites.length)) {
+        toast.error('Free users can save up to 3 favorites. Upgrade to Pro for unlimited!');
+        openPaywall();
+        return;
+      }
+      
       try {
         const response = await fetch(`${API}/favorites`, {
           method: 'POST',
@@ -1115,6 +1127,28 @@ export default function Dashboard() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56 bg-slate-900 border-slate-700">
+                  {!isProUser && (
+                    <>
+                      <DropdownMenuItem 
+                        onClick={openPaywall}
+                        className="text-yellow-400 focus:bg-yellow-500/10 focus:text-yellow-300"
+                        data-testid="upgrade-btn"
+                      >
+                        <Crown className="w-4 h-4 mr-2" />
+                        Upgrade to Pro
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-slate-700" />
+                    </>
+                  )}
+                  {isProUser && (
+                    <>
+                      <DropdownMenuItem className="text-emerald-400 focus:bg-emerald-500/10 focus:text-emerald-300">
+                        <Crown className="w-4 h-4 mr-2" />
+                        Pro Member
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-slate-700" />
+                    </>
+                  )}
                   <DropdownMenuItem className="text-slate-300 focus:bg-slate-800 focus:text-white">
                     <User className="w-4 h-4 mr-2" />
                     Profile
@@ -1290,8 +1324,28 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 mb-2">
                     <Sparkles className="w-4 h-4 text-purple-400" />
                     <span className="text-purple-400 text-sm font-medium">AI Safety Insight</span>
+                    {!isProUser && (
+                      <Badge variant="outline" className="border-yellow-500/50 text-yellow-400 text-xs ml-auto">
+                        <Crown className="w-3 h-3 mr-1" />
+                        PRO
+                      </Badge>
+                    )}
                   </div>
-                  {loadingInsight ? (
+                  {!hasAccess('AI_SAFETY_INSIGHTS') ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-slate-400 text-sm">Unlock AI-powered safety analysis for this location</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-purple-500/50 text-purple-400 hover:bg-purple-500/10"
+                        onClick={openPaywall}
+                        data-testid="unlock-ai-btn"
+                      >
+                        <Crown className="w-3 h-3 mr-1" />
+                        Upgrade to Pro
+                      </Button>
+                    </div>
+                  ) : loadingInsight ? (
                     <div className="flex items-center gap-2">
                       <RefreshCw className="w-4 h-4 text-slate-400 animate-spin" />
                       <span className="text-slate-400 text-sm">Generating insight...</span>
@@ -1650,6 +1704,9 @@ export default function Dashboard() {
           )}
         </DialogContent>
       </Dialog>
+      
+      {/* Subscription Paywall Dialog */}
+      <PaywallDialog />
     </div>
   );
 }

@@ -1,0 +1,21 @@
+{
+  "appId": "com.waterwatchuk.app",
+  "appName": "WaterWatch UK",
+  "webDir": "build",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "PurchasesCapacitor": {
+      "apiKeyApple": "${REVENUECAT_API_KEY_IOS}",
+      "apiKeyGoogle": "${REVENUECAT_API_KEY_ANDROID}"
+    }
+  },
+  "ios": {
+    "contentInset": "automatic"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

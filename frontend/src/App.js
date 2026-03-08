@@ -1,6 +1,7 @@
 import "@/index.css";
 import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import { SubscriptionProvider } from "./context/SubscriptionContext";
 import { Toaster } from "./components/ui/sonner";
 
 // Pages
@@ -35,18 +36,20 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRouter />
-        <Toaster 
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: 'rgba(15, 23, 42, 0.95)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#f8fafc',
-              backdropFilter: 'blur(16px)'
-            }
-          }}
-        />
+        <SubscriptionProvider>
+          <AppRouter />
+          <Toaster 
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: 'rgba(15, 23, 42, 0.95)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                color: '#f8fafc',
+                backdropFilter: 'blur(16px)'
+              }
+            }}
+          />
+        </SubscriptionProvider>
       </AuthProvider>
     </BrowserRouter>
   );

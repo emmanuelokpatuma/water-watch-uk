@@ -15,6 +15,13 @@ import json
 import base64
 from io import BytesIO
 
+# Stripe imports
+try:
+    import stripe
+    STRIPE_AVAILABLE = True
+except ImportError:
+    STRIPE_AVAILABLE = False
+
 # WebPush imports
 try:
     from pywebpush import webpush, WebPushException
@@ -774,6 +781,385 @@ async def get_station_history(station_id: str, days: int = 7):
     except Exception as e:
         logger.error(f"Error fetching history: {e}")
         return {"history": [], "summary": {}}
+
+# ==================== SUBSCRIPTION & PAYMENTS ====================
+
+# Stripe configuration
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_MONTHLY = os.environ.get("STRIPE_PRICE_MONTHLY", "price_monthly_3gbp")
+STRIPE_PRICE_YEARLY = os.environ.get("STRIPE_PRICE_YEARLY", "price_yearly_30gbp")
+
+if STRIPE_AVAILABLE and STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
+# Subscription Models
+class SubscriptionStatus(BaseModel):
+    user_id: str
+    tier: str = "free"  # free, pro
+    is_active: bool = False
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    current_period_end: Optional[datetime] = None
+    cancel_at_period_end: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class CheckoutRequest(BaseModel):
+    plan_id: str  # monthly, yearly
+    success_url: str
+    cancel_url: str
+
+# Feature tiers
+FREE_FEATURES = [
+    "VIEW_MAP",
+    "BASIC_WATER_QUALITY", 
+    "LIMITED_FAVORITES",
+    "SEARCH"
+]
+
+PRO_FEATURES = [
+    "AI_SAFETY_INSIGHTS",
+    "FULL_WATER_REPORTS",
+    "UNLIMITED_FAVORITES",
+    "PUSH_NOTIFICATIONS",
+    "SEWAGE_ALERTS",
+    "HISTORICAL_DATA",
+    "AD_FREE",
+    "AREA_REPORTS"
+]
+
+@api_router.get("/subscription/status")
+async def get_subscription_status(user: User = Depends(require_auth)):
+    """Get current user's subscription status"""
+    sub = await db.subscriptions.find_one(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not sub:
+        # Return free tier
+        return {
+            "user_id": user.user_id,
+            "tier": "free",
+            "is_active": False,
+            "features": FREE_FEATURES
+        }
+    
+    # Check if subscription is still active
+    is_active = sub.get("is_active", False)
+    if is_active and sub.get("current_period_end"):
+        period_end = sub["current_period_end"]
+        if isinstance(period_end, str):
+            period_end = datetime.fromisoformat(period_end)
+        if period_end < datetime.now(timezone.utc):
+            is_active = False
+    
+    return {
+        "user_id": user.user_id,
+        "tier": "pro" if is_active else "free",
+        "is_active": is_active,
+        "current_period_end": sub.get("current_period_end"),
+        "cancel_at_period_end": sub.get("cancel_at_period_end", False),
+        "features": PRO_FEATURES + FREE_FEATURES if is_active else FREE_FEATURES
+    }
+
+@api_router.post("/subscription/create-checkout")
+async def create_checkout_session(request: CheckoutRequest, user: User = Depends(require_auth)):
+    """Create a Stripe checkout session for subscription"""
+    if not STRIPE_AVAILABLE or not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Payment system not configured")
+    
+    try:
+        # Get or create Stripe customer
+        sub = await db.subscriptions.find_one({"user_id": user.user_id})
+        
+        if sub and sub.get("stripe_customer_id"):
+            customer_id = sub["stripe_customer_id"]
+        else:
+            # Create new Stripe customer
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.name,
+                metadata={"user_id": user.user_id}
+            )
+            customer_id = customer.id
+            
+            # Save customer ID
+            await db.subscriptions.update_one(
+                {"user_id": user.user_id},
+                {
+                    "$set": {
+                        "user_id": user.user_id,
+                        "stripe_customer_id": customer_id,
+                        "tier": "free",
+                        "is_active": False,
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    }
+                },
+                upsert=True
+            )
+        
+        # Select price based on plan
+        price_id = STRIPE_PRICE_MONTHLY if request.plan_id == "monthly" else STRIPE_PRICE_YEARLY
+        
+        # Create checkout session
+        checkout_session = stripe.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            line_items=[{
+                "price": price_id,
+                "quantity": 1,
+            }],
+            mode="subscription",
+            success_url=request.success_url,
+            cancel_url=request.cancel_url,
+            metadata={"user_id": user.user_id},
+            subscription_data={
+                "metadata": {"user_id": user.user_id}
+            }
+        )
+        
+        return {"checkout_url": checkout_session.url, "session_id": checkout_session.id}
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/subscription/webhook")
+async def handle_stripe_webhook(request: Request):
+    """Handle Stripe webhook events"""
+    if not STRIPE_AVAILABLE:
+        return {"status": "ignored"}
+    
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    
+    try:
+        if STRIPE_WEBHOOK_SECRET:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, STRIPE_WEBHOOK_SECRET
+            )
+        else:
+            event = json.loads(payload)
+    except Exception as e:
+        logger.error(f"Webhook signature verification failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    
+    event_type = event.get("type", "")
+    data = event.get("data", {}).get("object", {})
+    
+    logger.info(f"Received Stripe webhook: {event_type}")
+    
+    if event_type == "checkout.session.completed":
+        await handle_checkout_completed(data)
+    elif event_type == "customer.subscription.updated":
+        await handle_subscription_updated(data)
+    elif event_type == "customer.subscription.deleted":
+        await handle_subscription_deleted(data)
+    elif event_type == "invoice.payment_failed":
+        await handle_payment_failed(data)
+    
+    return {"status": "processed"}
+
+async def handle_checkout_completed(session: dict):
+    """Handle successful checkout"""
+    user_id = session.get("metadata", {}).get("user_id")
+    subscription_id = session.get("subscription")
+    customer_id = session.get("customer")
+    
+    if not user_id:
+        logger.error("Checkout completed without user_id")
+        return
+    
+    # Get subscription details
+    if subscription_id:
+        sub = stripe.Subscription.retrieve(subscription_id)
+        current_period_end = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+        
+        await db.subscriptions.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "tier": "pro",
+                    "is_active": True,
+                    "stripe_customer_id": customer_id,
+                    "stripe_subscription_id": subscription_id,
+                    "current_period_end": current_period_end.isoformat(),
+                    "cancel_at_period_end": False,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+            },
+            upsert=True
+        )
+        
+        logger.info(f"Subscription activated for user {user_id}")
+
+async def handle_subscription_updated(subscription: dict):
+    """Handle subscription updates (renewals, cancellations)"""
+    user_id = subscription.get("metadata", {}).get("user_id")
+    
+    if not user_id:
+        # Try to find by customer ID
+        customer_id = subscription.get("customer")
+        sub_doc = await db.subscriptions.find_one({"stripe_customer_id": customer_id})
+        if sub_doc:
+            user_id = sub_doc["user_id"]
+    
+    if not user_id:
+        logger.error("Subscription updated without user_id")
+        return
+    
+    current_period_end = datetime.fromtimestamp(subscription.get("current_period_end", 0), tz=timezone.utc)
+    is_active = subscription.get("status") in ["active", "trialing"]
+    cancel_at_period_end = subscription.get("cancel_at_period_end", False)
+    
+    await db.subscriptions.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {
+                "tier": "pro" if is_active else "free",
+                "is_active": is_active,
+                "current_period_end": current_period_end.isoformat(),
+                "cancel_at_period_end": cancel_at_period_end,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+    )
+    
+    logger.info(f"Subscription updated for user {user_id}: active={is_active}")
+
+async def handle_subscription_deleted(subscription: dict):
+    """Handle subscription cancellation"""
+    customer_id = subscription.get("customer")
+    
+    sub_doc = await db.subscriptions.find_one({"stripe_customer_id": customer_id})
+    if sub_doc:
+        await db.subscriptions.update_one(
+            {"stripe_customer_id": customer_id},
+            {
+                "$set": {
+                    "tier": "free",
+                    "is_active": False,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+            }
+        )
+        logger.info(f"Subscription cancelled for customer {customer_id}")
+
+async def handle_payment_failed(invoice: dict):
+    """Handle failed payment"""
+    customer_id = invoice.get("customer")
+    logger.warning(f"Payment failed for customer {customer_id}")
+    # Optionally notify user or grace period logic
+
+@api_router.post("/subscription/cancel")
+async def cancel_subscription(user: User = Depends(require_auth)):
+    """Cancel subscription at period end"""
+    sub = await db.subscriptions.find_one({"user_id": user.user_id})
+    
+    if not sub or not sub.get("stripe_subscription_id"):
+        raise HTTPException(status_code=404, detail="No active subscription found")
+    
+    try:
+        stripe.Subscription.modify(
+            sub["stripe_subscription_id"],
+            cancel_at_period_end=True
+        )
+        
+        await db.subscriptions.update_one(
+            {"user_id": user.user_id},
+            {"$set": {"cancel_at_period_end": True}}
+        )
+        
+        return {"message": "Subscription will cancel at end of billing period"}
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.post("/subscription/restore")
+async def restore_subscription(user: User = Depends(require_auth)):
+    """Restore/verify subscription from Stripe"""
+    sub = await db.subscriptions.find_one({"user_id": user.user_id})
+    
+    if not sub or not sub.get("stripe_customer_id"):
+        raise HTTPException(status_code=404, detail="No subscription history found")
+    
+    try:
+        # Get active subscriptions for customer
+        subscriptions = stripe.Subscription.list(
+            customer=sub["stripe_customer_id"],
+            status="active",
+            limit=1
+        )
+        
+        if subscriptions.data:
+            stripe_sub = subscriptions.data[0]
+            current_period_end = datetime.fromtimestamp(stripe_sub.current_period_end, tz=timezone.utc)
+            
+            await db.subscriptions.update_one(
+                {"user_id": user.user_id},
+                {
+                    "$set": {
+                        "tier": "pro",
+                        "is_active": True,
+                        "stripe_subscription_id": stripe_sub.id,
+                        "current_period_end": current_period_end.isoformat(),
+                        "cancel_at_period_end": stripe_sub.cancel_at_period_end,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+                }
+            )
+            
+            return {"message": "Subscription restored", "tier": "pro"}
+        else:
+            return {"message": "No active subscription found", "tier": "free"}
+            
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@api_router.get("/subscription/portal")
+async def get_customer_portal(user: User = Depends(require_auth)):
+    """Get Stripe customer portal URL for managing subscription"""
+    sub = await db.subscriptions.find_one({"user_id": user.user_id})
+    
+    if not sub or not sub.get("stripe_customer_id"):
+        raise HTTPException(status_code=404, detail="No subscription found")
+    
+    try:
+        portal_session = stripe.billing_portal.Session.create(
+            customer=sub["stripe_customer_id"],
+            return_url=f"{os.environ.get('FRONTEND_URL', '')}/dashboard"
+        )
+        
+        return {"portal_url": portal_session.url}
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Feature access check endpoint
+@api_router.get("/subscription/check-feature/{feature_key}")
+async def check_feature_access(feature_key: str, request: Request):
+    """Check if user has access to a specific feature"""
+    user = await get_current_user(request)
+    
+    # Free features are always accessible
+    if feature_key in FREE_FEATURES:
+        return {"has_access": True, "feature": feature_key, "tier_required": "free"}
+    
+    # Pro features require subscription
+    if feature_key in PRO_FEATURES:
+        if not user:
+            return {"has_access": False, "feature": feature_key, "tier_required": "pro", "reason": "login_required"}
+        
+        sub = await db.subscriptions.find_one({"user_id": user.user_id})
+        is_pro = sub and sub.get("is_active", False) and sub.get("tier") == "pro"
+        
+        return {
+            "has_access": is_pro,
+            "feature": feature_key,
+            "tier_required": "pro",
+            "reason": None if is_pro else "subscription_required"
+        }
+    
+    return {"has_access": False, "feature": feature_key, "reason": "unknown_feature"}
 
 # ==================== HELPER FUNCTIONS ====================
 
