@@ -1,0 +1,150 @@
+{
+  "identity": {
+    "persona": "E1",
+    "mission": "Create a tactical, high-performance water safety dashboard that fuses environmental data with elite outdoor gear aesthetics.",
+    "principles": [
+      "Fusion: Tactical Utility x Environmental Calm",
+      "Emotion: Trust through Clarity",
+      "Content: Data is the Hero",
+      "Interaction: Map-First Exploration"
+    ]
+  },
+  "theme": {
+    "mode": "dark",
+    "strategy": "The application must be in DARK MODE by default and permanently. The outdoor use case requires high contrast against dark backgrounds to reduce glare and improve battery life.",
+    "base_classes": "dark bg-slate-950 text-slate-50 antialiased selection:bg-cyan-500 selection:text-white"
+  },
+  "typography": {
+    "headings": {
+      "family": "Manrope",
+      "weights": ["600", "700", "800"],
+      "usage": "All section titles, modal headers, and hero text. Use tracking-tight.",
+      "fallback": "sans-serif"
+    },
+    "body": {
+      "family": "Inter",
+      "weights": ["400", "500"],
+      "usage": "General content, descriptions, and tooltips.",
+      "fallback": "sans-serif"
+    },
+    "data": {
+      "family": "JetBrains Mono",
+      "weights": ["400", "500"],
+      "usage": "Water quality metrics, timestamps, coordinates, and sensor readings.",
+      "fallback": "monospace"
+    }
+  },
+  "colors": {
+    "palette": {
+      "background": {
+        "default": "#020617",
+        "surface": "#0f172a",
+        "overlay": "rgba(15, 23, 42, 0.8)"
+      },
+      "primary": {
+        "DEFAULT": "#06b6d4",
+        "glow": "0 0 20px rgba(6, 182, 212, 0.5)"
+      },
+      "danger": {
+        "DEFAULT": "#ef4444",
+        "glow": "0 0 20px rgba(239, 68, 68, 0.5)"
+      },
+      "warning": {
+        "DEFAULT": "#f97316",
+        "glow": "0 0 20px rgba(249, 115, 22, 0.5)"
+      },
+      "success": {
+        "DEFAULT": "#10b981",
+        "glow": "0 0 20px rgba(16, 185, 129, 0.5)"
+      },
+      "text": {
+        "primary": "#f8fafc",
+        "secondary": "#94a3b8",
+        "muted": "#64748b"
+      }
+    },
+    "utility_classes": {
+      "bg_app": "bg-slate-950",
+      "bg_card": "bg-slate-900/50 backdrop-blur-xl border border-slate-800",
+      "text_main": "text-slate-50",
+      "text_muted": "text-slate-400"
+    }
+  },
+  "layout": {
+    "grid_system": "Bento Grid",
+    "spacing": "Generous. Use p-6 and p-8 for internal container padding.",
+    "containers": "Rounded-xl or Rounded-2xl",
+    "z_index": {
+      "map": "z-0",
+      "overlays": "z-10",
+      "modals": "z-50",
+      "toasts": "z-100"
+    }
+  },
+  "components": {
+    "map": {
+      "provider": "react-leaflet",
+      "tile_layer": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      "attribution": "&copy; <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors &copy; <a href='https://carto.com/attributions'>CARTO</a>",
+      "style": "h-full w-full absolute inset-0 z-0",
+      "marker_style": "Custom CSS divIcons with glowing pulses for alerts."
+    },
+    "cards": {
+      "style": "glassmorphism",
+      "classes": "bg-slate-900/80 backdrop-blur-md border border-white/10 shadow-xl rounded-xl"
+    },
+    "buttons": {
+      "primary": "bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-lg px-6 py-2 transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_25px_rgba(6,182,212,0.5)]",
+      "secondary": "bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg px-6 py-2 border border-slate-700"
+    },
+    "inputs": {
+      "style": "bg-slate-950/50 border-slate-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-lg text-white placeholder:text-slate-500"
+    }
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-xl bg-slate-900/70 border border-white/5",
+    "glow_effects": "Use drop-shadow and box-shadow to create 'bioluminescent' effects for safety ratings.",
+    "gradients": "Subtle linear gradients (slate-900 to slate-950) for backgrounds. NO radial gradients in the center."
+  },
+  "assets": {
+    "images": [
+      {
+        "category": "hero",
+        "url": "https://images.unsplash.com/photo-1765907893701-a81511073256",
+        "description": "Kayaker on golden water at sunset - Use for Hero Background",
+        "position": "Landing Page Hero"
+      },
+      {
+        "category": "feature",
+        "url": "https://images.unsplash.com/photo-1686656485534-d8518c3d911a",
+        "description": "Clean stream in nature - Use for 'Water Quality' feature section",
+        "position": "Feature Block 1"
+      },
+      {
+        "category": "context",
+        "url": "https://images.unsplash.com/photo-1721685495015-03bc6d73cecd",
+        "description": "River in lush forest - Use for 'Nature' or 'Community' section",
+        "position": "Feature Block 2"
+      }
+    ],
+    "icons": "Use 'lucide-react' for all UI icons (Map, Droplets, Waves, AlertTriangle, ShieldCheck)."
+  },
+  "instructions_to_main_agent": [
+    "1. SETUP: Ensure 'react-leaflet' and 'leaflet' are installed. Install 'lucide-react' if missing.",
+    "2. THEME: Apply the 'dark' class to the root HTML element immediately.",
+    "3. MAP: Implement the map as the full-screen background for the dashboard. Use the CartoDB Dark Matter tiles.",
+    "4. LAYOUT: Create a floating sidebar or overlay panels for the dashboard controls (Search, Filters, Details) using the Glassmorphism style.",
+    "5. MARKERS: Create custom map markers using Leaflet's divIcon. Use CSS to make them pulse if there is an alert.",
+    "6. FONTS: Import Manrope and JetBrains Mono from Google Fonts or similar provider.",
+    "7. COMPONENTS: Customise Shadcn components to match the Slate-950/Cyan-500 theme. Remove default white backgrounds and borders.",
+    "8. ACCESSIBILITY: Ensure high contrast text (Slate-50) on the dark backgrounds.",
+    "9. DATA MOCKING: Create a robust mock data service for river levels, pollution alerts, and safety scores since real APIs might need keys.",
+    "10. TOASTS: Use 'sonner' for alerts (e.g., 'Sewage discharge detected nearby')."
+  ],
+  "universal_guidelines": {
+    "avoid_generic": "Do not use standard Bootstrap-like grids. Use asymmetric 'Bento' grids.",
+    "animation": "Add subtle entrance animations to the floating panels (slide in from left/bottom).",
+    "interaction": "Map markers should expand or glow on hover.",
+    "logo": "Create a text-based logo using the Manrope font with a water droplet icon (Lucide)."
+  }
+}
